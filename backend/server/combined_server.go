@@ -24,14 +24,13 @@ type CombinedServer struct {
 	keyFile    string
 }
 
-// 2026-07-06 round4 精简：WebSocket 下线，NewCombinedServer 不再需要 wsHandler 参数
 func NewCombinedServer(cfg *config.Config, jwtUtils interface{}) *CombinedServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.CORS())
-	// 第四阶段 P0：维护模式拦截（最后注册，最高优先级）
+	// 维护模式拦截（最后注册，最高优先级）
 	router.Use(middleware.Maintenance())
 
 	registerAPIRoutes(router, jwtUtils, cfg)
@@ -55,7 +54,6 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}) *CombinedServer
 	}
 }
 
-// 2026-07-06 round4 精简：registerAPIRoutes 不再需要 wsHandler 参数
 func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Config) {
 	api := router.Group("/api")
 	{
@@ -63,26 +61,15 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 			authHandler := handlers.NewAuthHandler(jwt)
 			routesHandler := handlers.NewRoutesHandler()
 			customerHandler := handlers.NewCustomerHandler(cfg)
-			// 2026-07-06 精简：templateHandler + contractHandler 已删除
 
 			systemHandler := handlers.NewSystemHandler()
 			systemConfigHandler := handlers.NewSystemConfigHandler()
 			messageHandler := handlers.NewMessageHandler()
-			// 2026-07-06 精简：sealHandler / auditHandler 已删除（印章 / 审计模块全栈下线）
 
 			api.POST("/login", middleware.LoginRateLimit(), authHandler.Login)
 			api.POST("/refresh-token", middleware.RefreshTokenRateLimit(), authHandler.RefreshToken)
 			api.POST("/register", authHandler.Register)
 
-			// 2026-07-06 精简：/api/share/* 公开端点全部下线（主合同 / 印章 / 手签全删）
-			//   - share/customers-draft-contracts, share/contract, share/contract/multi-sign-fields,
-			//     share/contract/pdf, share/upload-signature, share/contract-field-signature,
-			//     share/signature/:id, share/seal/:id 全部移除
-
-
-			// 2026-07-06 round6 精简：删除 3 个 license 公开端点
-			//   /license/machine-code / /license/save-machine-code / /license/verify
-			//   /license/client-info 保留（公开端点，摄像头水印 IP 来源）
 			api.GET("/license/client-info", systemHandler.GetClientInfo)
 
 			protected := api.Group("")
@@ -100,7 +87,6 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 
 				departmentHandler := handlers.NewDepartmentHandler()
 				userHandler := handlers.NewUserExtendedHandler()
-				// 2026-07-06 round4 精简：wsHandler 引用删除（WebSocket 全栈下线）
 
 				protected.GET("/departments", departmentHandler.GetDepartmentTree)
 				protected.GET("/departments/:id", departmentHandler.GetDepartment)
@@ -108,8 +94,6 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/departments/:id/update", departmentHandler.UpdateDepartment)
 				protected.POST("/departments/:id/delete", departmentHandler.DeleteDepartment)
 				protected.GET("/departments/:id/users", departmentHandler.GetDepartmentUsers)
-
-				// 2026-07-06 精简：/api/flows/* 9 个 + /api/flows/templates/* 9 个流转路由已下线
 
 				protected.GET("/users", userHandler.GetUsers)
 				protected.GET("/users/check-username", userHandler.CheckUsername)
@@ -139,17 +123,6 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.GET("/customer/list-by-type", customerHandler.GetCustomersByTypeList)
 				protected.GET("/customer/search-by-type", customerHandler.SearchCustomersByTypeList)
 
-				// 2026-07-06 精简：template 管理 CRUD 已删除（保留 form_field 用于合同字段）
-				// 受影响接口：/api/templates/list, /templates/pdf, /templates/query,
-				//              /templates/create, /templates/update, /templates/delete, /templates/upload
-
-				// 2026-07-06 精简：主合同（在线文档）全栈下线
-				// 受影响接口：/api/contracts/list, /contracts/list-all, /contracts/by-customer,
-				//              /contracts/query, /contracts/:id/filled-pdf, /contracts/:id/pdf,
-				//              /contracts/download-zip, /contracts/create, /contracts/update-form,
-				//              /contracts/save-form, /contracts/delete, /contracts/reset-to-draft,
-				//              /contracts/cancel, /contracts/archive, /dashboard/stats
-
 				protected.GET("/messages/list", messageHandler.GetMessages)
 				protected.GET("/messages/unread-count", messageHandler.GetUnreadCount)
 				protected.GET("/messages/:id", messageHandler.GetMessage)
@@ -158,7 +131,7 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/messages/read-all", messageHandler.MarkAllAsRead)
 				protected.POST("/messages/:id/delete", messageHandler.DeleteMessage)
 
-				// 阶段 11：提醒业务（模板 + 订阅 + 日志 + 扫描触发）
+				// 提醒业务（模板 + 订阅 + 日志 + 扫描触发）
 				reminderHandler := handlers.NewReminderHandler()
 				protected.GET("/reminders/templates", reminderHandler.ListTemplates)
 				protected.POST("/reminders/templates", reminderHandler.CreateTemplate)
@@ -171,11 +144,7 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.GET("/reminders/logs", reminderHandler.ListLogs)
 				protected.POST("/reminders/scan", reminderHandler.TriggerScan)
 
-				// 第六阶段：PDF 锁定与证据管理（2026-07-06 精简：全套下线）
-				//   - PDFLockService / EvidenceHandler / 8 个 /api/evidence/* 路由 + 9 个权限码 全删
-				//   - 业务影响：归档合同 WORM 锁定功能取消，三方合同下载改为直接读 t.FilePath
-
-				// 阶段 13：定时任务调度框架
+				// 定时任务调度框架
 				scheduledTaskHandler := handlers.NewScheduledTaskHandler()
 				protected.GET("/scheduled-tasks", scheduledTaskHandler.ListTasks)
 				protected.GET("/scheduled-tasks/handlers", scheduledTaskHandler.ListHandlers)
@@ -193,14 +162,13 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/system/config", systemHandler.SetConfig)
 				protected.GET("/system/config-file", systemHandler.GetConfigFile)
 				protected.POST("/system/config-file", systemHandler.SaveConfigFile)
-				// 2026-07-06 round6 精简：/system/license-info 路由已删除（license 模块下线）
 				protected.POST("/system/backup-now", systemHandler.BackupNow)
 				protected.POST("/system/restore", systemHandler.RestoreFromBackup)
-				// 第四阶段 P0：维护模式查询 / 控制
+				// 维护模式查询 / 控制
 				protected.GET("/system/maintenance", systemHandler.GetMaintenanceStatus)
 				protected.POST("/system/maintenance", systemHandler.SetMaintenanceMode)
 
-				// 备份管理（第四阶段 Phase 4.3：UI 配套 API）
+				// 备份管理（UI 配套 API）
 				backupMgmtHandler := handlers.NewBackupHandler()
 				protected.GET("/backup/list", backupMgmtHandler.List)
 				protected.GET("/backup/:id", backupMgmtHandler.Detail)
@@ -215,10 +183,7 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.GET("/rbac/permissions", rbacMgmtHandler.ListPermissions)
 				protected.POST("/rbac/permissions", rbacMgmtHandler.UpsertPermission)
 				protected.DELETE("/rbac/permissions/:code", rbacMgmtHandler.DeletePermission)
-				// 2026-07-07 修复（round8 BUG-02）：CheckPermission 用 ShouldBindJSON 读 body，
-				// 路由必须为 POST 才能读到 body。原先误注册为 GET 导致 404。
 				protected.POST("/rbac/check", rbacMgmtHandler.CheckPermission)
-				// 2026-07-06 精简：/api/system/fonts 路由已删除（PDF 渲染下线，字体选择 API 不再需要）
 				protected.POST("/system/shutdown", systemHandler.ShutdownServer)
 				protected.POST("/system/generate-ssl-cert", systemHandler.GenerateSSLCert)
 
@@ -228,12 +193,7 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/system-config/update", systemConfigHandler.UpdateConfig)
 				protected.POST("/system-config/:key/delete", systemConfigHandler.DeleteConfig)
 
-				// 第九阶段：印章 / 手写签名（2026-07-06 精简：印章全栈下线）
-				// - 印章数据库表保留（schema 兼容），handler / API 全部移除
-				// - 公开端点 /api/share/seal/:id 仍保留（手签请求提交时使用）
-
-				// 第十阶段：第三方合同登记
-				// 2026-07-06 精简：tpLockService（PDFLockService）已删除，third_party handler 不再需要该依赖
+				// 第三方合同登记
 				tpHandler := handlers.NewThirdPartyHandler(cfg)
 				protected.GET("/third-party/contracts", tpHandler.ListContracts)
 				protected.POST("/third-party/contracts", tpHandler.CreateContract)
@@ -247,11 +207,6 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 
 				// 媒体库：照片 / 录像 / 音频（v2 单表 + 3 哈希）
 				mediaHandler := handlers.NewMediaHandler(cfg)
-				// 第五阶段：通用审计 API（支持 media / signature / seal）
-				// 2026-07-06 round3 精简：审计日志查询 / 链验证 已下线（前端 audit.vue 删除）
-				//   - /api/audit (GET) → 404
-				//   - /api/audit/reconcile (POST) → 404
-				//   - share/audit/consent-letter-view 仍保留（意愿确认书阅读埋点）
 				protected.GET("/media", mediaHandler.List)
 				protected.GET("/media/by-target", mediaHandler.ListByTarget)
 				protected.GET("/media/:id", mediaHandler.Get)
@@ -269,17 +224,9 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.GET("/media/check-hash", mediaHandler.CheckHash)
 				protected.GET("/media/:id/verify", mediaHandler.Verify)
 			}
-
-			// 公开端点：手签请求（凭 token 鉴权，无须登录）
-			// 2026-07-06 精简：seal-signature-requests/pub 公开端点已删除（手签全栈下线）
 		}
 	}
 }
-
-// 2026-07-06 round4 精简：registerWebSocketRoutes 整个函数删除
-//   - GET  /api/ws          (WebSocket upgrade)
-//   - GET  /api/ws/status   (当前在线连接数)
-//   全部下线
 
 func registerWebRoutes(router *gin.Engine, cfg *config.Config) {
 	_, err := web.GetFS()
@@ -461,8 +408,6 @@ func (s *CombinedServer) startHTTPS() error {
 func (s *CombinedServer) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	// 2026-07-06 round4 精简：s.wsHandler.Shutdown() 调用删除（WebSocket 下线）
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		utils.LogError("API服务器关闭超时: %v", err)

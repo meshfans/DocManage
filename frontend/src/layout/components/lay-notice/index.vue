@@ -1,23 +1,6 @@
 <script setup lang="ts">
 /**
- * 顶部铃铛通知（lay-notice）
- *
- * 2026-07-06 round2 精简：流转模块下线后，移除以下内容：
- *   - import { getMyPendingTasks } from "@/api/flow_instance"（api 已删除）
- *   - fetchTasks() 函数（拉取 /api/flows/my-pending）
- *   - WS 收到 flow_task / new_flow_task 时的刷新
- *   - tab "3"（流转待办）查找逻辑
- *   - 角标累计任务数逻辑
- *   - 点击 flow_task 跳 /flow/pending 的路由
- *   - noticesData 中第三个 tab 项
- *
- * 2026-07-06 round4 精简：WebSocket 模块下线后，移除以下内容：
- *   - import { wsService } from "@/utils/websocket"（utils/websocket.ts 已删）
- *   - import { getToken } from "@/utils/auth"（WS 鉴权用，删除）
- *   - connectWebSocket() 整个函数
- *   - onMounted 中的 connectWebSocket() 调用
- *   - onUnmounted 中的 wsService.disconnect() 调用
- *   - import { onUnmounted } 也随之未用
+ * 顶部铃铛通知（lay-notice）。
  *
  * 业务影响：实时推送下线，新消息需用户手动展开铃铛或刷新页面才可见
  *   （getMessages / getUnreadCount 在用户每次打开铃铛时拉取一次）
@@ -123,8 +106,6 @@ const handleMarkAllAsRead = async () => {
 
 onMounted(() => {
   fetchMessages();
-  // 2026-07-06 round2：移除 fetchTasks() 调用
-  // 2026-07-06 round4：移除 connectWebSocket() 调用（WS 模块下线）
 });
 
 const formatDate = (timestamp: string): string => {

@@ -11,7 +11,6 @@ export default [
     }
   },
 
-  // 员工扫码手签（公开）— 2026-07-06 精简：share/signature 已删除
   // 全屏403（无权访问）页面
   {
     path: "/access-denied",

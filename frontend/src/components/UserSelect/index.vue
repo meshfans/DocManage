@@ -116,7 +116,6 @@ interface Props {
   disabledIds?: number[];
   /**
    * 是否在用户列表顶部显示「公开（组织级）」虚拟员工选项（value=0）。
-   * 适用场景：印章分配等需要"公开 vs 具体员工"二选一的场景。
    */
   publicOption?: boolean;
   /** publicOption=true 时显示的标签文本 */

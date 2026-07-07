@@ -10,26 +10,9 @@ import (
 // seedRBAC 写入 RBAC 种子数据：role + permission
 // 1:1 设计：每个 API 对应一条 permission 记录
 //
-// ================================================================================
-// 2026-06-28 重大变更：移除印章"业务模式 Gate 2"
-// ================================================================================
-// 背景：
+// 紧急关停 = permission.status = 'disabled'（admin 在 RBAC 管理页可操作）。
 //
-//	原设计 = RBAC 权限码 (Gate 1) + 业务配置 seal_management_mode (Gate 2)
-//	问题：双 gate 冲突，用户有 seal:default 权限但 Gate 2 默认 admin 模式 → 403
-//
-// 变更：
-//   - 删除 backend/handlers/seal.go 中 5 处 canManageSeals() 调用
-//   - 删除 canManageSeals helper 函数本身
-//   - 删除 backend/handlers/seal_test.go 中 T14/T15 测试
-//   - config_defaults.go 中 seal_management_mode 标记废弃（保留兼容）
-//
-// 现在：
-//   - 单一真相源 = RBAC 权限码
-//   - 紧急关停 = permission.status = 'disabled'（admin 在 RBAC 管理页可操作）
-//   - canAccess（owner 检查）保留，防止 A 改 B 的印章
-//
-// 2026-06-25 P2-8.4 文档：seed 行为说明
+// seed 行为说明：
 //   - **不会覆盖**：seedPermissions / seedRoles 启动时用 INSERT OR IGNORE / ON CONFLICT DO NOTHING，
 //     业务修改过的种子数据（admin 改名 / permission 描述变更）不会被恢复。
 //   - 若要重置种子，需要手动清表后重启：
@@ -44,11 +27,9 @@ func seedRBAC() error {
 	if err := seedRoles(); err != nil {
 		return fmt.Errorf("seedRoles: %w", err)
 	}
-	// 2026-06-27 🔴 #2 启动时不变式校验：
-	//   common 角色必须包含 user:info（这是 /welcome 路由的兜底权限，
-	//   前端 router/modules/home.ts 强依赖）。如果 admin 从 common 移除 user:info，
-	//   所有普通用户登录后跳 /welcome → 403（灾难性 bug）。
-	//   在 seed 流程末尾做硬断言，启动期立即 panic 比运行时沉默失败强。
+	// 启动时不变式校验：common 角色必须包含 user:info（这是 /welcome 路由的兜底权限）。
+	// 如果 admin 从 common 移除 user:info，所有普通用户登录后跳 /welcome → 403。
+	// 在 seed 流程末尾做硬断言，启动期立即 panic 比运行时沉默失败强。
 	if err := assertCommonHasUserInfo(); err != nil {
 		return fmt.Errorf("RBAC 不变式校验失败: %w（common 角色必须包含 user:info，否则前端 /welcome 兜底权限缺失，所有普通用户登录后跳 403）", err)
 	}
@@ -64,8 +45,6 @@ func seedRBAC() error {
 //   - 如果 admin 在 RBAC 管理页面误删 common 角色的 user:info → 静默破坏兜底。
 //
 // 修复时机：seedRBAC 末尾，启动期早死。失败 = panic via InitDatabase 返回 error。
-//
-// 2026-06-27 🔴 #2 引入。
 func assertCommonHasUserInfo() error {
 	var permsJSON string
 	err := DB.QueryRow(`SELECT permissions FROM role WHERE code = ?`, "common").Scan(&permsJSON)
@@ -98,7 +77,7 @@ func seedRoles() error {
 			permsJSON: mustJSON([]string{
 				"*:*:*",
 			}),
-			dataScope: "all", // 2026-06-28 RBAC v3：admin 看全部
+			dataScope: "all", // admin 看全部
 			isSystem:  true,
 		},
 		{
@@ -108,28 +87,23 @@ func seedRoles() error {
 				"customer:list", "customer:detail", "customer:create", "customer:update", "customer:delete",
 				"customer:upload-signature", "customer:create-ext", "customer:update-ext",
 				"customer:list-by-type", "customer:search-by-type",
-				// 2026-07-06 精简：template:* 7 条权限码已删除
 				"media:list", "media:by-target", "media:detail",
 				"media:create", "media:update", "media:delete", "media:restore",
 				"media:tags", "media:bulk-tag", "media:bulk-delete", "media:bulk-customer",
 				"media:file", "media:thumb", "media:upload",
 				"media:check-hash", "media:verify",
-				// 2026-07-06 round5 精简：seal:* 11 条已从 manager 角色权限数组移除（permission 表已无这些行，permsJSON 残留会导致 GetEffectivePermissions 返回空集）
 				"user:list", "user:detail", "user:check-username", "user:by-department", "user:info",
 				"dept:list", "dept:detail", "dept:users",
-				// 2026-07-06 精简：flow:* 17 条全部从 manager 角色权限数组移除
-				"permission:version:query", // 2026-06-25 P0-6.3：所有登录用户需持有以轮询权限版本号
+				"permission:version:query",
 			}),
-			dataScope: "dept", // 2026-06-28 RBAC v3：manager 看本部门
+			dataScope: "dept", // manager 看本部门
 			isSystem:  false,
 		},
 		{
 			code: "common", name: "普通用户",
 			desc: "基础用户：查看文档 + 消息 + 公开业务配置 + 用户设置",
 			permsJSON: mustJSON([]string{
-				// 2026-07-06 精简：common 角色仅需 thirdparty:list 权限
-				// 2026-07-06 精简：flow:instances:* 8 条全部从 common 角色权限数组移除（流转模块全栈下线）
-				// === 消息：站内信全 CRUD + 已读 / 未读 ===
+				// 消息：站内信全 CRUD + 已读 / 未读
 				"message:list",
 				"message:unread-count",
 				"message:detail",
@@ -137,16 +111,16 @@ func seedRoles() error {
 				"message:mark-read",
 				"message:mark-all-read",
 				"message:delete",
-				// === 系统：公开业务配置 / 动态路由 / 权限版本轮询 ===
+				// 系统：公开业务配置 / 动态路由 / 权限版本轮询
 				"systemconfig:public",
 				"routes:async",
-				"permission:version:query", // 2026-06-25 P0-6.3：所有登录用户需持有以轮询权限版本号
-				// === 用户：自己信息 + 改密 + 登出 ===
-				"user:info", // 2026-06-26 v1.1：所有登录用户需持有以刷新自己的 roles/permissions（Plan B reload）；assertCommonHasUserInfo 不变式强依赖
+				"permission:version:query",
+				// 用户：自己信息 + 改密 + 登出
+				"user:info", // assertCommonHasUserInfo 不变式强依赖
 				"user:change-password",
 				"user:logout",
 			}),
-			dataScope: "self", // 2026-06-28 RBAC v3：common 看自己（向后兼容默认）
+			dataScope: "self", // common 看自己（默认）
 			isSystem:  true,
 		},
 	}
@@ -170,7 +144,7 @@ func seedRoles() error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	// 2026-06-28 RBAC v3 PoC：对已存在的 admin/manager 角色回填 data_scope
+	// 对已存在的 admin/manager 角色回填 data_scope
 	// （INSERT OR IGNORE 不会更新已存在行，所以单独 UPDATE 一次）
 	// common 保持 'self'（schema 默认值，行为不变）
 	updates := []struct {
@@ -243,9 +217,6 @@ func buildPermissionSeeds() []permSeed {
 		p("dept:delete", "删除部门", "dept", "/api/departments/:id/delete", "POST"),
 		p("dept:users", "部门用户", "dept", "/api/departments/:id/users", "GET"),
 
-		// === flow ===
-		// 2026-07-06 精简：flow:templates:* (9) + flow:instances:* (8) 全部下线（流转模块全栈删除）
-
 		// === user ===
 		p("user:list", "用户列表", "user", "/api/users", "GET"),
 		p("user:check-username", "检查用户名", "user", "/api/users/check-username", "GET"),
@@ -271,9 +242,6 @@ func buildPermissionSeeds() []permSeed {
 		p("customer:update-ext", "扩展更新客户", "customer", "/api/customer/update-ext", "POST"),
 		p("customer:list-by-type", "按类型查客户", "customer", "/api/customer/list-by-type", "GET"),
 		p("customer:search-by-type", "按类型搜索客户", "customer", "/api/customer/search-by-type", "GET"),
-
-		// 2026-07-06 精简：template:* 7 条权限码已下线（管理 CRUD 全部删除）
-		// formfield:* 仍保留（合同字段依赖），见下方
 
 		// === form field ===
 		p("formfield:list", "表单字段列表", "formfield", "/api/templates/fields", "GET"),
@@ -302,9 +270,6 @@ func buildPermissionSeeds() []permSeed {
 		p("reminder:logs", "提醒日志", "reminder", "/api/reminders/logs", "GET"),
 		p("reminder:scan", "触发扫描", "reminder", "/api/reminders/scan", "POST"),
 
-		// === evidence ===
-		// 2026-07-06 精简：evidence:* (8) 全部下线（PDF 锁定 + 证据包导出全栈删除）
-
 		// === scheduled ===
 		p("scheduled:list", "定时任务列表", "scheduled", "/api/scheduled-tasks", "GET"),
 		p("scheduled:handlers", "处理器列表", "scheduled", "/api/scheduled-tasks/handlers", "GET"),
@@ -328,7 +293,6 @@ func buildPermissionSeeds() []permSeed {
 		p("system:restore", "恢复备份", "system", "/api/system/restore", "POST"),
 		p("system:maintenance:get", "查维护模式", "system", "/api/system/maintenance", "GET"),
 		p("system:maintenance:set", "设维护模式", "system", "/api/system/maintenance", "POST"),
-		// 2026-07-06 精简：system:fonts 权限码已下线（PDF 字体选择 API 不再需要）
 		p("system:shutdown", "关闭服务", "system", "/api/system/shutdown", "POST"),
 		p("system:ssl-cert", "生成 SSL", "system", "/api/system/generate-ssl-cert", "POST"),
 
@@ -344,8 +308,6 @@ func buildPermissionSeeds() []permSeed {
 		p("systemconfig:update", "改业务配置", "systemconfig", "/api/system-config/update", "POST"),
 		p("systemconfig:delete", "删业务配置", "systemconfig", "/api/system-config/:key/delete", "POST"),
 
-		// 2026-07-06 精简：seal:* 11 条 + seal-req:* 3 条权限码已下线
-
 		// === thirdparty ===
 		p("thirdparty:list", "文档列表", "thirdparty", "/api/third-party/contracts", "GET"),
 		p("thirdparty:create", "创建文档", "thirdparty", "/api/third-party/contracts", "POST"),
@@ -357,10 +319,8 @@ func buildPermissionSeeds() []permSeed {
 		p("thirdparty:download", "下载文档", "thirdparty", "/api/third-party/contracts/:id/download", "GET"),
 		p("thirdparty:bulk-download", "批量下载文档", "thirdparty", "/api/third-party/contracts/bulk-download", "POST"),
 
-		// === audit ===
-		// 2026-07-06 round3 精简：audit:list / audit:reconcile 权限码已下线
-		//   - 审计日志查询 / 链验证 HTTP API 全部下线（前端 audit.vue 同步删除）
-		//   - audit_log 表 + database.AppendAudit 仍保留（其它业务写审计用）
+		// audit:list / audit:reconcile 权限码已下线
+		// audit_log 表 + database.AppendAudit 仍保留（其它业务写审计用）
 
 		// === media ===
 		p("media:list", "媒体列表", "media", "/api/media", "GET"),
@@ -391,9 +351,7 @@ func buildPermissionSeeds() []permSeed {
 		p("rbac:permissions:upsert", "新建/更新权限", "rbac", "/api/rbac/permissions", "POST"),
 		p("rbac:permissions:delete", "删除权限", "rbac", "/api/rbac/permissions/:code", "DELETE"),
 		p("rbac:check", "权限检查", "rbac", "/api/rbac/check", "POST"),
-		// 2026-06-25 P0-6.3 修复：permission-version 端点加权限码
-		// 任何已登录用户都应有此权限（前端轮询用），但恶意高频调用可借此制造 DoS
-		// 实际生产环境应配合 IP-based rate limit（middleware 层）。
+		// permission-version 端点：所有已登录用户都需持有（前端轮询用）。
 		p("permission:version:query", "查询权限版本号", "rbac", "/api/rbac/permission-version", "GET"),
 	}
 	return s

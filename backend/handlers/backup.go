@@ -97,10 +97,7 @@ func (h *BackupHandler) Detail(c *gin.Context) {
 // 安全（Issue A5）：先做 path containment 校验，确保目标路径在 cfg.Backup.Dir 内。
 // 否则攻击者可能修改 DB file_path 为 /etc/passwd 等敏感文件读取（需 JWT+DB 写权限）。
 //
-// 2026-07-06 round5 精简：删除加密下载分支（writeTempDecryptedZip / services.DecryptZip）。
-//   备份 zip 现在永远是明文，直接 c.File(m.FilePath)。
-//
-// 2026-06-29 RBAC v3 P0：补 backup:download 权限码校验。
+// 备份 zip 永远是明文，直接 c.File(m.FilePath)。
 func (h *BackupHandler) Download(c *gin.Context) {
 	if !RequirePermission(c, "backup:download") {
 		return
@@ -147,8 +144,6 @@ func (h *BackupHandler) Download(c *gin.Context) {
 	c.Header("Content-Type", "application/zip")
 	c.File(m.FilePath)
 }
-
-// 2026-07-06 round5 精简：writeTempDecryptedZip 已删除（备份不再加密）
 
 // Delete DELETE /api/backup/:id 删除备份（文件 + DB 记录同步删除）。
 //

@@ -9,14 +9,14 @@ import (
 )
 
 // 本文件：RBAC v3 数据级权限（data_scope）的数据库侧 helper。
-// 2026-06-28 P2：BuildWhereSQL 升级为通用 FilterOpts 接口，所有资源表（customer /
-// seal / media / flow_instance / reminder_subscription / template / third_party_contract）
+// BuildWhereSQL 升级为通用 FilterOpts 接口，所有资源表
+// （customer / media / reminder_subscription / third_party_contract）
 // 共用同一份 WHERE 拼接逻辑，配合白名单校验防 SQL 注入。
 //
-// PoC 简化（已通过 6 项验证）：
-//   - 一个用户一个主部门（来自 users.department_id），跨部门走 custom（P5 实现）
-//   - data_scope 通过 GetUserEffectiveDataScope(userID) 从用户第一个 role 读取
-//   - 子部门递归通过 BFS 一次性查全（P2 阶段不缓存 SubDeptIDs，30s 整体缓存）
+// 简化：
+//   - 一个用户一个主部门（来自 users.department_id），跨部门走 custom
+//   - data_scope 通过 GetUserEffectiveDataScope(userID) 读取
+//   - 子部门递归通过 SQLite CTE 单查询完成
 
 // UserDataScope 用户的数据级权限上下文。
 type UserDataScope struct {
@@ -30,7 +30,7 @@ type UserDataScope struct {
 }
 
 // FilterOpts BuildWhereSQL 的入参，描述资源表的列名 + 过滤选项。
-// 2026-06-28 P2：白名单校验防 SQL 注入。
+// 白名单校验防 SQL 注入。
 type FilterOpts struct {
 	TableAlias      string // SQL 别名（"c" / "cu" / "m"），可空
 	OwnerCol        string // 白名单：created_by / owner_user_id / user_id 之一，可空（无 owner 列的表自动降级 dept-only）
@@ -79,9 +79,8 @@ func GetUserMainDepartment(userID int64) (int64, error) {
 }
 
 // GetDescendantDepartmentIDs 返回 rootID 及其所有后代部门 ID（含 rootID 自身）。
-// 使用 SQLite CTE（公共表表达式）单查询完成树形遍历，避免 BFS 的 N+1 查询。
+// 使用 SQLite CTE 单查询完成树形遍历，避免 BFS 的 N+1 查询。
 // status='active' 过滤已禁用部门；parent_id 形成环时自动终止（UNION 不递归重复行）。
-// 2026-06-28 P2 优化：原 BFS 实现对 5 层 × 宽树产生 ~30+ 次查询，现固定 1 次。
 func GetDescendantDepartmentIDs(rootID int64) ([]int64, error) {
 	if rootID <= 0 {
 		return nil, nil
@@ -119,9 +118,7 @@ func GetDescendantDepartmentIDs(rootID int64) ([]int64, error) {
 }
 
 // GetUserEffectiveDataScope 解析用户的有效 data_scope（向后兼容入口）。
-// 2026-06-29 RBAC v3 P5 重构：多角色时取"最宽松"合并结果，不再只用 codes[0]。
-// 单角色场景行为与旧版完全一致（all > dept_and_sub > dept > custom > self_and_sub_dept > self）。
-// 旧调用方（仅看 roleCode + dataScope）继续可用，业务逻辑零变更。
+// 多角色时取"最宽松"合并结果；单角色场景行为一致（all > dept_and_sub > dept > custom > self_and_sub_dept > self）。
 func GetUserEffectiveDataScope(userID int64) (roleCode, dataScope string, err error) {
 	merged, err := GetUserMergedDataScope(userID)
 	if err != nil {
@@ -135,7 +132,7 @@ func GetUserEffectiveDataScope(userID int64) (roleCode, dataScope string, err er
 }
 
 // MergedDataScope 多角色 data_scope 合并结果。
-// 2026-06-29 RBAC v3 P5：当用户持有多个 role 时，effective data_scope 取"最宽松"的。
+// 当用户持有多个 role 时，effective data_scope 取"最宽松"的。
 // 合并规则（按优先级从高到低）：
 //
 //	all > dept_and_sub > dept > custom > self_and_sub_dept > self
@@ -233,10 +230,10 @@ func mergeDataScopes(codes []string, roles []Role) *MergedDataScope {
 // admin 短路：username=="admin" → data_scope='all'。
 // 错误时返回 nil + err（middleware 决定 fallback 策略）。
 //
-// 2026-06-28 v3.1：当 data_scope='custom' 时，从 role.custom_dept_ids 加载部门白名单，
-// 并通过 CTE 单查询过滤掉已删除 / 已禁用的部门（应用层 FK 校验，弥补 JSON 无外键约束的弱点）。
+// 当 data_scope='custom' 时，从 role.custom_dept_ids 加载部门白名单，
+// 并通过 CTE 单查询过滤掉已删除 / 已禁用的部门。
 //
-// 2026-06-29 P5：多角色合并后，custom 模式使用所有 custom 角色部门的并集（已去重 + 过滤死引用）。
+// 多角色合并后，custom 模式使用所有 custom 角色部门的并集（已去重 + 过滤死引用）。
 func LoadUserDataScope(userID int64, username string) (*UserDataScope, error) {
 	scope := &UserDataScope{UserID: userID, Username: username}
 	merged, err := GetUserMergedDataScope(userID)
@@ -291,7 +288,7 @@ func LoadUserDataScope(userID int64, username string) (*UserDataScope, error) {
 }
 
 // filterLiveDeptIDs 过滤掉已删除/已禁用的部门。
-// 2026-06-29 P5：从 loadCustomDeptIDs 抽出来，支持任意 int64 slice（多角色合并场景）。
+// 支持任意 int64 slice（多角色合并场景）。
 func filterLiveDeptIDs(rawIDs []int64) ([]int64, error) {
 	if len(rawIDs) == 0 {
 		return nil, nil
@@ -322,9 +319,7 @@ func filterLiveDeptIDs(rawIDs []int64) ([]int64, error) {
 	return live, rows.Err()
 }
 
-// loadCustomDeptIDs 旧版：从单个 role 的 custom_dept_ids 加载白名单。
-// 2026-06-29 P5 重构后已被 filterLiveDeptIDs 取代（支持多角色合并）。
-// 保留为兼容占位（无调用方）；如未来需要可重定向到 filterLiveDeptIDs。
+// loadCustomDeptIDs 已废弃：被 filterLiveDeptIDs 取代（支持多角色合并）。
 // Deprecated: use filterLiveDeptIDs with merged CustomDepts instead.
 func loadCustomDeptIDs(roleCode string) ([]int64, error) {
 	var rawJSON string
@@ -338,7 +333,7 @@ func loadCustomDeptIDs(roleCode string) ([]int64, error) {
 	return filterLiveDeptIDs(rawIDs)
 }
 
-// BuildWhereSQL 根据 UserDataScope + FilterOpts 拼装资源表的 WHERE 子句（P2 通用版）。
+// BuildWhereSQL 根据 UserDataScope + FilterOpts 拼装资源表的 WHERE 子句。
 //
 // 返回值：
 //   - whereSQL：包含 "deleted_at = 0" 前缀（handler 可直接 AND 业务条件）
@@ -432,8 +427,6 @@ func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error)
 
 	case "self_and_sub_dept":
 		// 防御性：OwnerCol 为空时无法拼接 owner_col = ? OR ...，降级到 dept-only。
-		// 当前 4 个生产调用方（customer / seal / media / third_party_contract）都传 OwnerCol，
-		// 此分支主要保护未来新增的"无 owner 列"资源表。
 		if opts.OwnerCol == "" {
 			if len(scope.SubDeptIDs) == 0 {
 				return base + " AND 1=0", nil, nil
@@ -450,8 +443,7 @@ func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error)
 
 	case "custom":
 		if len(scope.CustomDepts) == 0 {
-			// 2026-06-28 修复：custom 模式未配置 → 返回错误而非静默降级 self。
-			// 避免 admin 配错时用户看到自己数据以为是 bug。
+			// custom 模式未配置 → 返回错误而非静默降级 self。
 			return base + " AND 1=0", nil, fmt.Errorf("custom 模式未配置部门白名单（CustomDepts 为空）")
 		}
 		where, args := buildINWhere(qualify(opts.DeptCol), scope.CustomDepts)

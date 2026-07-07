@@ -184,8 +184,7 @@ func (s *RestoreService) Run(req RestoreRequest) (*RestoreResult, error) {
 		}
 	}
 
-	// 5) 应用全量 + 增量（顺序覆盖）
-	//    2026-07-06 round5 精简：删除解密分支（m.Encrypted / DecryptZip 都不再用）
+	// 5) 应用全量 + 增量（顺序覆盖，备份 zip 永远是明文）
 	for i, m := range allManifests {
 		if err := s.extractZipContents(m.FilePath); err != nil {
 			result.Error = fmt.Sprintf("步骤 %d 失败: %v", i+1, err)
@@ -348,28 +347,16 @@ func extractFile(f *zip.File, targetPath string) error {
 //     → 所有 type='full' 的查询自然排除审计记录（演练 / 增量父查找不会被污染）
 //   - Status: verified（避免 RecoverStuckBackups 反复扫描）
 //   - FilePath: 存恢复摘要 "restore: full_id=N, incrementals=[...]"（仅供人读）
-//
-// 2026-06-27 修复 bug #2：
-//   - 之前 Type=full → findLatestSuccessfulFullBackup 把审计记录当备份
-//   - 演练 / 增量父查找 / 任何 type='full' 的查询都会命中审计记录
-//   - 演练拿到 FilePath="restore: full_id=21..." 当 zip 打开 → "系统找不到文件"
-//
-// 2026-06-29 bug #14 强化：
+//   - parent_id = req.FullBackupID（UI 可基于 backup_id 反查源备份）
 //   - 用 UpdateBackupManifestVerifiedWithStatus 单次 UPDATE 写入 status+verified_result
-//   - 避免先 pending→verified 两步写入带来的中间态扫描窗口
-//   - 配合 services/backup.go DetectOrphanBackups 排除 restore_audit
-//     防止 FilePath="restore: ..." 被 os.Stat 失败后错置为 missing
+//     避免先 pending→verified 两步写入带来的中间态扫描窗口
 func (s *RestoreService) writeRestoreAudit(req RestoreRequest, full *database.BackupManifest, incrementals []*database.BackupManifest) error {
 	snowID, _ := generateBackupSnowID()
 	now := time.Now().Unix()
-	// 2026-06-27 修复：设 parent_id = req.FullBackupID 建立与源全量备份的外键关联
-	//   - UI 可点击"基于 backup_id=N"反查源备份
-	//   - 即使 parent_id 被 CountLiveChildrenByParent 查询，该函数已加 type=incremental
-	//     过滤（services/backup_manifest.go），审计记录不会被误算为"活跃子增量"
 	manifest := &database.BackupManifest{
 		SnowID:     snowID,
-		Type:       database.BackupTypeRestoreAudit, // 独立类型，区别于 full/incremental
-		ParentID:   req.FullBackupID,                // 2026-06-27：建立与源全量备份的外键关联
+		Type:       database.BackupTypeRestoreAudit,
+		ParentID:   req.FullBackupID,
 		StartedAt:  now,
 		FinishedAt: now,
 		CreatedBy:  0,

@@ -26,9 +26,6 @@ import (
 // ThirdPartyHandler 第三方合同 9 个 API + 1 bulk 端点
 // 路由前缀：/api/third-party/contracts
 // 鉴权：受 JWTAuth 中间件保护
-//
-// 2026-07-06 精简：移除 lockSvc（PDFLockService 已删除）。归档合同下载改为直接读 t.FilePath
-//   下发（WORM 归档能力随之取消，业务简化为"上传即归档"）。
 type ThirdPartyHandler struct {
 	cfg *config.Config
 }
@@ -40,8 +37,8 @@ func NewThirdPartyHandler(cfg *config.Config) *ThirdPartyHandler {
 // ==================== Helper ====================
 
 // thirdPartyAccess 权限校验：所有登录用户可读；写操作限制 owner 或 admin
-// 注：admin 通过 IsAdminUser(c) 判定（DB-backed，2026-06-28 RBAC v3 升级）
-// 2026-06-29 RBAC v3 P4：叠加 data_scope 检查。非 admin 用户需同时满足：
+// 注：admin 通过 IsAdminUser(c) 判定（DB-backed）
+// 非 admin 用户需同时满足：
 //  1. owner == 当前用户，或
 //  2. data_scope 允许访问（manager 看本部门+下级、custom 等）
 func (h *ThirdPartyHandler) thirdPartyAccess(c *gin.Context, t *models.ThirdPartyContract) bool {
@@ -56,7 +53,7 @@ func (h *ThirdPartyHandler) thirdPartyAccess(c *gin.Context, t *models.ThirdPart
 	return thirdPartyDataScopeAllows(c, t.CreatedBy, t.DepartmentID)
 }
 
-// thirdPartyDataScopeAllows 2026-06-29 RBAC v3 P2 重构：转调统一 helper。
+// thirdPartyDataScopeAllows 转调统一 helper。
 // 保留薄壳函数名以最小化 handler 调用点改动；新代码请直接用 CheckDataScopeAccess。
 func thirdPartyDataScopeAllows(c *gin.Context, ownerID, departmentID int64) bool {
 	return CheckDataScopeAccess(c, ownerID, departmentID)
@@ -70,13 +67,12 @@ func generateContractNo() string {
 	return fmt.Sprintf("TP-%s-%s", datePrefix, utils.NextSnowIDString())
 }
 
-// listThirdPartyContractsScoped 2026-06-29 RBAC v3 P2 重构（review #7）：
-// 抽取 ListContracts / BulkDownload else 分支共用的 data_scope 拼接逻辑。
+// listThirdPartyContractsScoped 抽取 ListContracts / BulkDownload else 分支共用的 data_scope 拼接逻辑。
 // 返回 (list, total, err)，调用方自行决定 HTTP 响应与日志。
 //
 // 规则：
 //   - admin 或 data_scope=all：直接走 ListThirdPartyContracts（全量）
-//   - 否则：BuildWhereSQL + ListThirdPartyContractsByDataScope（按 started_by/department_id 过滤）
+//   - 否则：BuildWhereSQL + ListThirdPartyContractsByDataScope（按 created_by/department_id 过滤）
 func listThirdPartyContractsScoped(c *gin.Context, customerID int64, customerType, status, search string, page, pageSize int) ([]*models.ThirdPartyContract, int, error) {
 	scope := middleware.GetDataScope(c)
 	if scope == nil || scope.DataScope == "all" {
@@ -100,7 +96,7 @@ func listThirdPartyContractsScoped(c *gin.Context, customerID int64, customerTyp
 //	GET /api/third-party/contracts
 //	?customer_id=&customer_type=&status=&search=&page=&page_size=
 //
-// 2026-06-29 RBAC v3 P4：admin 看全部；非 admin 按 data_scope 过滤。
+// admin 看全部；非 admin 按 data_scope 过滤。
 // 资源列：owner=tpc.created_by，dept=tpc.department_id。
 func (h *ThirdPartyHandler) ListContracts(c *gin.Context) {
 	customerID, _ := strconv.ParseInt(c.Query("customer_id"), 10, 64)
@@ -123,7 +119,7 @@ func (h *ThirdPartyHandler) ListContracts(c *gin.Context) {
 	var list []*models.ThirdPartyContract
 	var total int
 	var err error
-	// 2026-06-29 P2 重构：data_scope 拼接逻辑抽到 listThirdPartyContractsScoped helper
+	// data_scope 拼接逻辑抽到 listThirdPartyContractsScoped helper
 	list, total, err = listThirdPartyContractsScoped(c, customerID, customerType, status, search, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
@@ -237,10 +233,8 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 		utils.BadRequest(c, "customer_id 不能为空")
 		return
 	}
-	// 2026-07-07 修复（round8 BUG-04）：PDFLockService 已在 round7 删除，
-	// 前端 ThirdPartyContractList.vue / ThirdPartyContractDetail.vue 已无 PDF 上传流程。
 	// 移除 FilePath/FileSize 强制校验，允许"先建档后补传"的工作流。
-	// 若用户上传了文件，仍可走 POST /api/third-party/contracts/:id/upload 单独补传。
+	// 文件补传走 POST /api/third-party/contracts/:id/upload 单独调用。
 	if req.FilePath != "" && req.FileSize <= 0 {
 		utils.BadRequest(c, "已提供 file_path 时 file_size 必须 > 0")
 		return
@@ -284,7 +278,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	// 合同号独立生成
 	contractNoFinal := generateContractNo()
 	currentUserID := c.GetInt64("user_id")
-	// 2026-06-29 RBAC v3 P4：创建时快照当前用户主部门，供 data_scope 过滤使用。
+	// 创建时快照当前用户主部门，供 data_scope 过滤使用。
 	deptID, _ := database.GetUserMainDepartment(currentUserID)
 
 	id, err := database.CreateThirdPartyContractV2(
@@ -310,7 +304,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 //
 //	GET /api/third-party/contracts/:id
 //
-// 2026-06-29 RBAC v3 P4：owner-or-admin 或 data_scope 允许才能查看。
+// owner-or-admin 或 data_scope 允许才能查看。
 func (h *ThirdPartyHandler) GetContract(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -594,8 +588,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 //
 //	GET /api/third-party/contracts/:id/download
 //
-// 2026-06-29 RBAC v3 P4：增加 owner-or-admin / data_scope 校验。
-// 此前无任何访问控制，存在越权下载他人合同 PDF 的风险。
+// owner-or-admin / data_scope 校验：非 owner 且 data_scope 不允许则 403。
 func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -615,9 +608,6 @@ func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
 		utils.Error(c, http.StatusForbidden, "无权下载此合同")
 		return
 	}
-
-	// 2026-07-06 精简：归档合同不再走 WORM，直接读 t.FilePath 下发。
-	//   PDFLockService 链路已删，业务简化为"上传即归档"。
 
 	if t.FilePath == "" {
 		utils.Error(c, http.StatusNotFound, "该合同尚未上传文件")
@@ -662,11 +652,8 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 	var ids []int64
 	if len(req.IDs) > 0 {
 		// 即便前端给了 ids 列表，也需二次校验：每个 id 都必须 data_scope 允许。
-		// 否则非 admin 用户可绕过 list filter 直接拉指定 id 的 PDF（handover §10 P0）。
-		// 2026-06-29 review issue #1/#2/#3 修复：
-		//   - 用 GetThirdPartyContractsByIDs 批量查，替代逐个 GetByID 的 N+1 模式
-		//   - 任何 id 不存在 / DB 错误 / 权限拒绝 → 记 warn 并 403 返回（含拒绝列表）
-		//   - 与 GetContract 单条访问拒绝的 UX 一致（明确告知用户哪些 id 被拒）
+		// 否则非 admin 用户可绕过 list filter 直接拉指定 id 的 PDF。
+		// 用 GetThirdPartyContractsByIDs 批量查（N+1 防护）；任何 id 不存在 / 权限拒绝 → 403。
 		contracts, terr := database.GetThirdPartyContractsByIDs(req.IDs)
 		if terr != nil {
 			utils.Warn("[third_party.BulkDownload] GetThirdPartyContractsByIDs 失败 ids=%v err=%v", req.IDs, terr)
@@ -699,9 +686,9 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 		}
 		ids = req.IDs
 	} else {
-		// 2026-06-29 RBAC v3 P4：按 search/status/customer_id 查时也走 data_scope 过滤，
+		// 按 search/status/customer_id 查时也走 data_scope 过滤，
 		// 避免非 admin 用户用搜索条件拉走其他部门合同。
-		// 2026-06-29 P2 重构：data_scope 拼接逻辑复用 ListContracts 的 listThirdPartyContractsScoped helper
+		// data_scope 拼接逻辑复用 ListContracts 的 listThirdPartyContractsScoped helper
 		var list []*models.ThirdPartyContract
 		var err error
 		list, _, err = listThirdPartyContractsScoped(c, req.CustomerID, "", req.Status, req.Search, 1, 1000)

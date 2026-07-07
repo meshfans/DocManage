@@ -172,14 +172,13 @@ func makeBackupRecoverJobHandler() JobFunc {
 	}
 }
 
-// makeBackupDrillJobHandler 月度演练（第四阶段 Phase 4.5）。
+// makeBackupDrillJobHandler 月度演练。
 //
 // 行为：
 //   - 查最近一次 success/verified/missing 全量备份
 //   - 在临时目录解压（**不覆盖生产**）
-//   - 自动处理加密（若 manifest.encrypted=true，先解密再解压）
 //   - PRAGMA integrity_check → 必须 "ok"
-//   - 抽查 contract/customer/seal/media/user 5 个核心表前 10 条
+//   - 抽查 contract/customer/media/user 4 个核心表前 10 条
 //   - 演练结果写入 backup_manifest.verified_result
 //   - 失败立即 ERROR 日志（生产可对接告警系统）
 func makeBackupDrillJobHandler() JobFunc {
@@ -212,7 +211,7 @@ func makeBackupDrillJobHandler() JobFunc {
 		if err != nil {
 			errMsg += ": " + err.Error()
 		}
-		// 2026-06-27 🟢 #13：直接用 errors.New 而非 fmt.Errorf("%s", ...)，
+		// 直接用 errors.New 而非 fmt.Errorf("%s", ...)，
 		// 避免无意义的格式化层（errMsg 是 string）。
 		return errMsg, errors.New(errMsg)
 	}

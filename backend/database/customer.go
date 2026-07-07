@@ -646,7 +646,7 @@ func SearchCustomersByType(page, pageSize int, keyword, ctype string) ([]Custome
 
 // ==================== Signature ====================
 
-// SignatureRecord 签名/印章记录，含三组哈希（SM3 / SHA256 / 联合哈希）用于完整性校验。
+// SignatureRecord 客户签名记录，含三组哈希（SM3 / SHA256 / 联合哈希）用于完整性校验。
 type SignatureRecord struct {
 	ID           int64  `json:"id"`
 	SnowID       string `json:"snowid"`
@@ -659,7 +659,7 @@ type SignatureRecord struct {
 	SignedAt     string `json:"signed_at"`
 }
 
-// CreateSignatureRecord 新增一条签名/印章记录。
+// CreateSignatureRecord 新增一条客户签名记录。
 func CreateSignatureRecord(snowid string, customerID int64, sigType string, filePath string, sm3Hash string, sha256Hash string, combinedHash string) (int64, error) {
 	result, err := DB.Exec(`
 		INSERT INTO signature_record (snowid, customer_id, type, file_path, sm3_hash, sha256_hash, combined_hash)

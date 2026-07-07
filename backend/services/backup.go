@@ -176,9 +176,7 @@ func (s *BackupService) performBackup(isManual bool) (manifestID int64, err erro
 		return manifestID, fmt.Errorf("%s", errMsg)
 	}
 
-	// 4) 2026-07-06 round5 精简：删除加密分支（cfg.Backup.EncryptLocal / EncryptPassphrase 已下线）
-	//    原逻辑：明文 zip → 算三哈希 → 加密 → 写 .enc.zip → 标 manifest.encrypted=true
-	//    现在：明文 zip 直接是最终产物，三哈希照常算
+	// 4) 明文 zip 直接是最终产物，三哈希照常算
 
 	// 5) 算明文 zip 的三哈希 + total_files
 	plainPath := latestZip
@@ -203,8 +201,6 @@ func (s *BackupService) performBackup(isManual bool) (manifestID int64, err erro
 		utils.LogError("更新 manifest success 失败: %v", updateErr)
 		return manifestID, fmt.Errorf("更新 manifest 失败: %w", updateErr)
 	}
-
-	// 2026-07-06 round5 精简：SetBackupManifestEncrypted 调用已删除（不再写加密标记）
 
 	utils.Info("备份完成: manifest_id=%d, snowid=%s, path=%s, size=%d, duration=%v, is_manual=%v",
 		manifestID, snowID, latestZip, fileSize, duration, isManual)

@@ -20,12 +20,6 @@ type Config struct {
 	Backup    BackupConfig    `json:"backup"`
 	Scheduler SchedulerConfig `json:"scheduler"`
 
-	// 2026-07-06 round6 精简：移除 Debug / License / PDF 三个字段
-	//   - Debug：AES-256-GCM 信封解密的时间窗调试开关，删除后只能通过修改日志级别开 debug
-	//   - License：硬件指纹绑定 + license 信封解密 + 到期/功能模块校验，删除后所有人都能跑全部功能
-	//   - PDF.Font：从未在 PDF 生成代码中实际引用（pdfcpu 用内置 Helvetica），删除无副作用
-	//   - envelope 包 + tryEnableDebugMode 同步删除（无其他调用者）
-
 	// MaintenanceMode 进程内维护模式开关（第四阶段 P0）。
 	//
 	// 用途：恢复期间（RestoreFromBackup）拦截所有业务 API，避免数据漂移。
@@ -53,35 +47,19 @@ type JWTConfig struct {
 }
 
 // DatabaseConfig 数据库配置。
-//
-// 第四阶段（Phase 4.0 WAL 迁移）：
-//   - JournalMode 默认 WAL（高并发 / 增量备份前置）
-//   - Synchronous 默认 NORMAL（WAL 模式下安全且快 10x）
-// 2026-07-06 round5 精简：默认 JournalMode 改为 DELETE（取消 WAL 模式）。
-//   - WAL 代码路径保留：applyWALConfig / WalAutocheckpoint 字段仍在，仅默认行为变更
-//   - 想重开 WAL：把 config.json 的 database.journal_mode 设为 "WAL" 即可
 type DatabaseConfig struct {
 	Path string `json:"path"`
 
-	// JournalMode: WAL / DELETE / TRUNCATE / MEMORY / OFF
-	//   WAL 优点：读写不互斥、增量备份基础、并发高
-	//   WAL 缺点：不支持网络文件系统（NFS / SMB）
-	//   默认值：DELETE（2026-07-06 round5 变更，原 WAL）
+	// JournalMode: WAL / DELETE / TRUNCATE / MEMORY / OFF，默认 DELETE。
 	JournalMode string `json:"journal_mode"`
 
-	// Synchronous: FULL / NORMAL / OFF
-	//   FULL：每次事务 fsync（最安全，最慢）
-	//   NORMAL：WAL 模式下仅关键时刻 fsync（推荐）
-	//   OFF：不 fsync（崩溃可能丢数据，仅测试用）
-	//   默认值：NORMAL
+	// Synchronous: FULL / NORMAL / OFF，默认 NORMAL。
 	Synchronous string `json:"synchronous"`
 
-	// CacheSize 单位 KB。负数 = KB，正数 = 字节。默认 64000 = 64MB
+	// CacheSize 单位 KB。负数 = KB，正数 = 字节。默认 64000 = 64MB。
 	CacheSize int `json:"cache_size"`
 
-	// WalAutocheckpoint 每写入多少页触发一次 checkpoint。默认 1000。
-	// 较小值 → 更频繁 checkpoint → WAL 文件小，恢复快
-	// 较大值 → checkpoint 少 → 大事务快，但 WAL 文件大
+	// WalAutocheckpoint 每写入多少页触发一次 checkpoint。默认 1000，仅 WAL 模式生效。
 	WalAutocheckpoint int `json:"wal_autocheckpoint"`
 
 	// BusyTimeout 毫秒。获取写锁的超时，默认 5000。
@@ -97,10 +75,10 @@ type UploadConfig struct {
 	MaxSize int64  `json:"max_size"`
 }
 
-// WORMConfig 配置文件（第六阶段 PDF 锁定）
+// WORMConfig WORM 存储配置（Write Once Read Many，仅用于第三方合同归档）。
 type WORMConfig struct {
 	Dir       string `json:"dir"`
-	ExportDir string `json:"export_dir"` // 证据包导出目录
+	ExportDir string `json:"export_dir"`
 }
 
 type LogConfig struct {
@@ -119,10 +97,7 @@ type BackupConfig struct {
 	DatabaseEnabled bool `json:"database_enabled"`
 	UploadEnabled   bool `json:"upload_enabled"`
 
-	// 2026-07-06 round5 精简：备份加密字段（EncryptLocal / EncryptPassphrase）已下线
-	//   - 备份 zip 不再 AES-256-GCM 加密落盘
-	//   - 历史已加密备份：DB 表 manifest.encrypted=true 的行不再被新代码处理
-	//     （handlers/backup.go 不再读 m.Encrypted 分支；用户需自行处理历史加密备份）
+	// 备份加密字段（EncryptLocal / EncryptPassphrase）已下线，备份 zip 不再加密落盘。
 }
 
 type SchedulerConfig struct {
@@ -179,7 +154,6 @@ func applyEnvOverrides(config *Config) {
 	}
 
 	// WEB_HOST / WEB_PORT 已废弃（Phase 4.1+）：原 WebConfig 已删除
-	// 如有旧环境变量配置，会被忽略
 
 	if secret := getEnv("JWT_SECRET", ""); secret != "" {
 		config.JWT.Secret = secret
@@ -201,7 +175,7 @@ func applyEnvOverrides(config *Config) {
 		config.Upload.Dir = uploadDir
 	}
 
-	// 2026-07-06 round6 精简：移除 LICENSE_MACHINE_CODE / LICENSE_KEY 环境变量覆盖（license 字段已下线）
+	// LICENSE_MACHINE_CODE / LICENSE_KEY 环境变量已下线
 }
 
 func validateConfig(config *Config) {
@@ -248,15 +222,8 @@ func validateConfig(config *Config) {
 		config.Database.Path = "./data/doc.db"
 	}
 
-	// 第四阶段（Phase 4.0 WAL 迁移）默认值：
-	//   - JournalMode 默认 WAL（高并发、增量备份前置）
-	//   - Synchronous 默认 NORMAL（WAL 模式下安全且快 10x）
-	// 2026-07-06 round5 精简：JournalMode 默认值改为 DELETE（取消 WAL）
-	//   - CacheSize 默认 64MB（-64000 KB）
-	//   - WalAutocheckpoint 默认 1000 页（仅当 journal_mode=WAL 时生效）
-	//   - BusyTimeout 默认 5000 毫秒
-	// 说明：bool 零值无法区分"未设置"和"显式 false"，
-	//       字符串 / int 零值能区分，这里只对前者用 if-empty 守卫。
+	// bool 零值无法区分"未设置"和"显式 false"，
+	// 字符串 / int 零值能区分，这里只对前者用 if-empty 守卫。
 	if config.Database.JournalMode == "" {
 		config.Database.JournalMode = "DELETE"
 	}
@@ -286,12 +253,11 @@ func validateConfig(config *Config) {
 		config.Upload.Dir = "./uploads"
 	}
 
-	// 第六阶段：WORM 目录默认在 uploads/worm
+	// WORM 目录默认在 uploads/worm
 	if config.WORM.Dir == "" {
 		config.WORM.Dir = config.Upload.Dir + "/worm"
 	}
 
-	// 第六阶段：证据包导出目录
 	if config.WORM.ExportDir == "" {
 		config.WORM.ExportDir = config.Upload.Dir + "/exports"
 	}
@@ -345,11 +311,7 @@ func validateConfig(config *Config) {
 		config.Scheduler.LogOutputMaxKB = 4
 	}
 
-	// 2026-07-06 round6 精简：删除 PDF.Font.Default/FilePath 默认值赋值
-	//   PDF 字体配置字段已下线（runtime 实际用 pdfcpu 内置 Helvetica，从未引用 cfg.PDF.Font）
-
-	// 2026-07-06 round6 精简：删除 tryEnableDebugMode 调用
-	//   Debug 字段已下线，无法再走时间窗 debug 启用流程
+	// PDF.Font.Default/FilePath 默认值赋值已删除（runtime 用 pdfcpu 内置 Helvetica）
 }
 
 func (c *Config) GetAccessExpireDuration() time.Duration {

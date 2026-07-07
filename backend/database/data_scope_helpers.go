@@ -4,20 +4,18 @@ import (
 	"strings"
 )
 
-// 本文件：2026-06-28 RBAC v3 P4 通用 data_scope 适配器。
-// 为 P3/P4 的 4 个低频资源（flow_instance / template / third_party_contract / reminder_subscription）
-// 提供统一的 ListXByDataScope 模式：
+// 本文件：data_scope 通用适配器。
+// 为 reminder_subscription 等低频资源提供统一的 ListXByDataScope 模式：
 //   - 在原 ListX 基础上接受 extraWhere + extraArgs
-//   - 去掉 BuildWhereSQL 输出的 "deleted_at = 0" 前缀（这些表用 status 列替代）
+//   - 去掉 BuildWhereSQL 输出的 "deleted_at = 0" 前缀（部分表用 status 列替代）
 //   - AND 到原 WHERE 末尾
 //
 // 设计取舍：保持原 ListX 函数签名不变（向后兼容），新增 ListXByDataScope 走 data_scope 路径。
 // 实际 SQL 拼接在每个函数内独立维护（小复制），避免引入抽象层带来的复杂度。
-// 风险：原 ListX 改了 WHERE 结构时，ListXByDataScope 也得同步改。
 
 // adaptDataScopeWhere 适配 BuildWhereSQL 输出到具体表的 WHERE 拼接。
 //   - hasDeletedAt=true：表有 deleted_at 列 → 直接保留 BuildWhereSQL 输出的 "deleted_at = 0"
-//   - hasDeletedAt=false：表无 deleted_at 列（如 seal）→ 把 "deleted_at = 0" 替换为 "1=1" 占位
+//   - hasDeletedAt=false：表无 deleted_at 列 → 把 "deleted_at = 0" 替换为 "1=1" 占位
 //   - 清理尾部孤立 AND
 //   - 返回 (cleanedWhere, ok)：ok=false 表示 extraWhere 退化为空（无需追加）
 //

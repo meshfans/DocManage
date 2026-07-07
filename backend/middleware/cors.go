@@ -36,11 +36,8 @@ func CORS() gin.HandlerFunc {
 			}
 		}
 
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With, X-Token, Sec-WebSocket-Key, Sec-WebSocket-Version, Sec-WebSocket-Extensions, Sec-WebSocket-Protocol")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With, X-Token")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
-		c.Writer.Header().Set("Access-Control-Allow-Protocols", "websocket")
-		c.Writer.Header().Set("Connection", "Upgrade")
-		c.Writer.Header().Set("Upgrade", "websocket")
 		// 跨域下载必须 expose Content-Disposition，前端 fetch+blob 才能读到 filename
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, Content-Length, Content-Type, Authorization")
 

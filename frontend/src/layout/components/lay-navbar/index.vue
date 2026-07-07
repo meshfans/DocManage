@@ -120,8 +120,8 @@ const submitChangePassword = async () => {
 };
 
 // ==================== 重置 DocManage Client ====================
-// 只在 Tauri 客户端内可见（通过 navigator.userAgent 识别）
-// 点击后调用 Tauri HTTP 桥 /reset 端点 → 清 localStorage(docmanage_url) + 回到输入界面
+// 只在桌面客户端内可见（通过 navigator.userAgent 识别）
+// 点击后调用客户端 HTTP 桥 /reset 端点 → 清 localStorage(docmanage_url) + 回到输入界面
 const showClientButton = computed(() => isDocClient());
 
 const onDrag = (e: MouseEvent) => {
@@ -143,7 +143,7 @@ const onClose = () => {
   });
 };
 
-// ==================== 地址栏（仅 Tauri 客户端）====================
+// ==================== 地址栏（仅桌面客户端）====================
 // 显示当前代理的 static_target，让用户知道"我在访问谁"
 // 默认隐藏（点击 navbar 的眼睛图标切换显示）
 // 配合 reset 按钮：调 reset op → navigate 回 ?mode=settings → 重新输入 URL
@@ -197,7 +197,7 @@ onMounted(() => {
 //   - vue-router 4 默认 HTML5 history 模式，router.push 内部用 history.pushState
 //   - 所以浏览器历史栈和 vue-router 完全同步，无需自己维护
 //   - 原生 API 天然支持 query/hash 还原（不会丢失）
-//   - 普通浏览器和 Tauri WebView 都支持
+//   - 普通浏览器和桌面客户端 WebView 都支持
 //
 // 优势（对比自建栈方案）：
 //   - 代码从 60 行 → 10 行，无 watch / 标志位 / 栈管理
@@ -404,7 +404,7 @@ watch(
   position: relative;  // 让 navbar-url 用 absolute 居中
   .navbar-drag{flex: 1;height:100%;display: flex !important;}
   .navbar-drag:hover{cursor: move;}
-  // DocManage Client 关闭按钮 hover 红色（仅在 Tauri 客户端内显示）
+  // DocManage Client 关闭按钮 hover 红色（仅在桌面客户端内显示）
   .navbar-close:hover {
     background: #e81123 !important;
     color: #fff !important;

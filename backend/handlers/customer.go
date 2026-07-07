@@ -19,10 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 2026-07-06 round4 精简：CustomerHandler 移除 wsHandler 字段 + wsHandlerInstance 全局变量 + SetWebSocketHandlerForCustomer 注入函数
-//   - 签字时不再 SendToUser 推 WS 消息
-//   - 消息仍写入 messages 表（database.CreateMessage），前端下次进入铃铛可读
-
 type CustomerHandler struct {
 	cfg *config.Config
 }

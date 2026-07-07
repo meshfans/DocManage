@@ -50,9 +50,6 @@ const loading = ref(false);
 const lastUpdated = ref<number>(0);
 
 // 完整的 DashboardStats 类型（与后端 backend/database/dashboard.go 一一对应）
-// 2026-07-06 round2 精简：total_contracts/draft_contracts/filled_contracts/signed_contracts/
-//   cancelled_contracts/archived_contracts/total_templates/total_seals/pending_flow_instances 全删
-//   （主合同/模板/印章/流转模块下线）
 type DashboardStats = {
   // 客户
   total_customers: number;
@@ -330,7 +327,6 @@ type QuickAction = {
 };
 
 const ALL_ACTIONS: QuickAction[] = [
-  // 2026-07-06 round2 精简：删除"新建文档"（主合同编辑页已下线）+ "我的待办"（流转模块下线）
   {
     title: "新建客户",
     desc: "添加个人 / 企业客户",
@@ -370,8 +366,7 @@ const visibleActions = computed(() =>
 );
 
 // ==================== 方法 ====================
-// 2026-07-06 精简：原 /api/dashboard/stats（聚合主合同）已下线。
-//   改为按模块单独调用各模块的列表接口，统计字段独立填充。
+// 按模块单独调用各模块的列表接口，统计字段独立填充。
 async function loadStats() {
   loading.value = true;
   try {

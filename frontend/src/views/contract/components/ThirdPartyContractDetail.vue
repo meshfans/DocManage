@@ -49,9 +49,8 @@ const endDate = ref<string>("");
 const remark = ref("");
 const status = ref("draft");
 
-// 2026-06-23：终态守卫（archived / cancelled）
-//   与主合同一致：终态合同不可修改表单 / 不可重新上传 / 不可保存
-//   详情页可"查看"（下载 PDF / 跳回列表），但写操作被禁用
+// 终态守卫（archived / cancelled）：终态合同不可修改表单 / 不可重新上传 / 不可保存
+// 详情页可"查看"（下载 PDF / 跳回列表），但写操作被禁用
 const isReadOnly = computed(
   () => isEdit.value && (status.value === "archived" || status.value === "cancelled")
 );

@@ -16,8 +16,8 @@ type ConfigDefault struct {
 }
 
 var DEFAULT_CONFIGS = map[string]ConfigDefault{
-	// ========== 企业基本信息（用于 PDF 头部、印章生成、合同字段、签章等） ==========
-	"company_name":       {"示例科技有限公司", "企业信息", "公司完整名称（用于 PDF 头部、印章、合同等）"},
+	// ========== 企业基本信息 ==========
+	"company_name":       {"示例科技有限公司", "企业信息", "公司完整名称"},
 	"company_short_name": {"示例公司", "企业信息", "公司简称（短）"},
 	"tax_id":             {"91110000XXXXXXXXXX", "企业信息", "统一社会信用代码 / 税号（18 位）"},
 	"legal_person":       {"张三", "企业信息", "法人代表姓名"},

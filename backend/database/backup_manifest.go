@@ -8,10 +8,9 @@ import (
 
 // 本文件：备份清单（backup_manifest）表 CRUD 操作。
 //
-// 第四阶段 Phase 4.1：
 //   - full / incremental 备份记录
 //   - parent_id 链接增量 → 全量
-//   - 双哈希（SM3 + SHA-256）用于完整性校验
+//   - 三哈希（SM3 + SHA-256 + Combined）用于完整性校验
 //   - 异地备份追踪（offsite_* 字段）
 
 // ==================== Backup Manifest ====================
@@ -20,11 +19,8 @@ import (
 const (
 	BackupTypeFull        = "full"
 	BackupTypeIncremental = "incremental"
-	// BackupTypeRestoreAudit 恢复审计记录（不是真正的备份文件）
-	//   - 2026-06-27 修复演练失败 bug #2：之前用 BackupTypeFull 占位，导致
-	//     findLatestSuccessfulFullBackup / GetLatestFullBackup 把审计记录当备份，
-	//     FilePath = "restore: full_id=21, ..." 当 zip 路径打开 → 系统找不到文件
-	//   - 现在用独立 Type 标识，所有 type='full' 的查询自然排除审计记录
+	// BackupTypeRestoreAudit 恢复审计记录（不是真正的备份文件）。
+	// 用独立 Type 标识，所有 type='full' 的查询自然排除审计记录。
 	BackupTypeRestoreAudit = "restore_audit"
 )
 
@@ -48,19 +44,13 @@ type BackupManifest struct {
 	Status   string `json:"status"`
 	FilePath string `json:"file_path"`
 	FileSize int64  `json:"file_size"`
-	// 三哈希（与 media / seal / contract 表保持一致）
+	// 三哈希：
 	//   SM3       — 国密哈希（合规）
 	//   SHA256    — 国际标准哈希
 	//   Combined  — SHA256(SM3 + SHA256)，交叉校验冗余
 	FileHashSM3      string `json:"file_hash_sm3"`
 	FileHashSHA256   string `json:"file_hash_sha256"`
 	FileHashCombined string `json:"file_hash_combined"`
-
-	// 2026-07-06 round5 精简：加密标记字段（Encrypted / EncryptionAlgo / EncryptPassphrase / HkdfInputsHash）已删除
-	//   - 备份 zip 不再 AES-256-GCM 加密
-	//   - 历史 DB 中 encrypted=true 的行：colScan 仍会读到字段（schema 表头还在），但 Go struct 不再持有
-	//     → 用 backupManifestCols_new 重新映射 SELECT 列表，**不** SELECT 这些列
-	//   - 用户确认会删 doc.db 重置 → schema CREATE TABLE 也不再有这些列
 
 	// 增量备份专用
 	WALRangeStart int64 `json:"wal_range_start"`
@@ -93,8 +83,6 @@ type BackupManifest struct {
 }
 
 // backupManifestCols 是查询 backup_manifest 全部字段的列名。
-// 2026-07-06 round5 精简：移除 encrypted / encryption_algo / encrypt_passphrase / hkdf_inputs_hash 四列
-//   - 用户确认会删 doc.db 重置 → schema 不再创建这些列
 const backupManifestCols = `
 	id, snowid, type, parent_id, status, file_path, file_size,
 	file_hash_sm3, file_hash_sha256, file_hash_combined,
@@ -107,8 +95,7 @@ const backupManifestCols = `
 
 // ScanBackupManifestRow 将单行扫描到 BackupManifest 指针。
 // 接受 QueryRow().Scan 或 Rows().Scan 的可变参数接口。
-// 导出供 services 包使用（第四阶段 Phase 4.5 备份演练）。
-// 2026-07-06 round5 精简：移除 4 个加密相关 scan 目标
+// 导出供 services 包使用（备份演练）。
 func ScanBackupManifestRow(scan func(...interface{}) error, m *BackupManifest) error {
 	var (
 		finishedAt, offsiteAt, verifiedAt sql.NullInt64
@@ -244,8 +231,6 @@ func UpdateBackupManifestVerifiedWithStatus(id int64, status, result string) err
 	return err
 }
 
-// 2026-07-06 round5 精简：SetBackupManifestEncrypted 已删除（备份不再加密，标记列已下线）
-
 // GetBackupManifestByID 按 ID 查询。
 func GetBackupManifestByID(id int64) (*BackupManifest, error) {
 	row := DB.QueryRow(`SELECT `+backupManifestCols+` FROM backup_manifest WHERE id = ?`, id)
@@ -262,14 +247,9 @@ func GetBackupManifestByID(id int64) (*BackupManifest, error) {
 // GetLatestFullBackup 查询最近一次成功的全量备份。
 // 用于增量备份时锁定 parent_id。
 //
-// 2026-06-27 bug #2 修复：排除恢复审计记录
-//   - 新审计：type = 'restore_audit' → 已通过 "type = BackupTypeFull" 过滤自动排除
+// 排除恢复审计记录：
+//   - 新审计：type = 'restore_audit' → 通过 "type = BackupTypeFull" 过滤自动排除
 //   - 旧审计（兼容存量）：type='full' 但 verified_result='restore_audit' → 用 NOT 子句显式排除
-//     （兼容存量数据，等下一次手动恢复触发 writeRestoreAudit 自动转新类型）
-//
-// 2026-06-27 🟡 #4 改造：与 services/backup_drill.go findLatestSuccessfulFullBackup 保持一致
-//
-//	正向过滤为主（type=BackupTypeFull），NOT 子句显式排除旧审计
 func GetLatestFullBackup() (*BackupManifest, error) {
 	row := DB.QueryRow(`
 		SELECT `+backupManifestCols+`
@@ -447,12 +427,7 @@ func ListExpiredBackups(now int64) ([]*BackupManifest, error) {
 
 // CountLiveChildrenByParent 统计某 parent_id 下"仍存活"（keep_until > 0 且 >= now）的子增量数量。
 // 用于链式清理：若有活跃子增量，父全量不删。
-//
-// 2026-06-27 修复：明确加 type = BackupTypeIncremental 过滤
-//   - 恢复审计记录（type=restore_audit）也用了 parent_id 指向被恢复的全量备份
-//     （writeRestoreAudit 设 parent_id = req.FullBackupID），如果不过滤 type，
-//     删除全量备份时会错误地认为"还有活跃子增量"（实际是审计记录）→ 拒绝删除
-//   - 修复后：本函数严格只统计 incremental 类型，确保链式清理 / 删除检查的语义正确
+// 严格只统计 incremental 类型（恢复审计记录也用了 parent_id，需排除）。
 func CountLiveChildrenByParent(parentID, now int64) (int64, error) {
 	var count int64
 	err := DB.QueryRow(`
@@ -490,9 +465,6 @@ func UpdateKeepUntil(id int64, keepUntil int64) error {
 }
 
 // RecoverWronglyMarkedAudits 自动修复被错误标记为 missing 的审计记录。
-//
-// 2026-06-29 bug #14：根因是 DetectOrphanBackups 未排除 restore_audit，
-// 导致审计记录的 FilePath="restore: ..." 经 os.Stat 失败后被错置为 missing。
 //
 // 修复策略：
 //   - 将 status='missing' 且 type='restore_audit' 的记录恢复为 verified

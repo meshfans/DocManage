@@ -141,14 +141,9 @@ type BackupConfig struct {
 	DaysToKeep      int  `json:"days_to_keep"`
 	DatabaseEnabled bool `json:"database_enabled"`
 	UploadEnabled   bool `json:"upload_enabled"`
-	// 2026-07-06 round5 精简：备份加密字段已删除（与 config.BackupConfig 保持一致）
 }
 
-// 2026-07-06 round6 精简：LicenseConfig / PDFConfig / PDFFontConfig 三个类型已下线
-//   - LicenseConfig：随 license 字段下线
-//   - PDFConfig / PDFFontConfig：随 pdf 字段下线
-//   - ConfigFile 结构已同步移除 license / pdf 字段
-
+// ConfigFile 系统配置（已下线 license / pdf 字段）
 type ConfigFile struct {
 	Description string         `json:"description"`
 	Server      ServerConfig   `json:"server"`
@@ -206,8 +201,7 @@ func (h *SystemHandler) GetConfigFile(c *gin.Context) {
 			DatabaseEnabled: cfg.Backup.DatabaseEnabled,
 			UploadEnabled:   cfg.Backup.UploadEnabled,
 		},
-		// 2026-07-06 round6 精简：License / PDF 字段不再下发
-	}
+		}
 
 	utils.Success(c, result)
 }
@@ -242,8 +236,6 @@ func (h *SystemHandler) SaveConfigFile(c *gin.Context) {
 	cfg.Backup.DaysToKeep = req.Backup.DaysToKeep
 	cfg.Backup.DatabaseEnabled = req.Backup.DatabaseEnabled
 	cfg.Backup.UploadEnabled = req.Backup.UploadEnabled
-	// 2026-07-06 round5 精简：备份加密字段已下线，赋值代码一并删除
-	// 2026-07-06 round6 精简：License / PDF 字段已下线，赋值代码一并删除
 
 	configFile := config.GetConfigFilePath()
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -262,11 +254,6 @@ func (h *SystemHandler) SaveConfigFile(c *gin.Context) {
 		"message": "配置文件保存成功",
 	})
 }
-
-// 2026-07-06 round6 精简：4 个 license 相关 handler 已删除
-//   - GetMachineCode / SaveMachineCode：硬件指纹读写 API
-//   - VerifyLicense / GetLicenseInfo：license 信封验证 / 当前 license 状态查询
-//   - license 模块整体下线（配置字段、机器码绑定、license 信封解密、到期校验、功能模块控制）
 
 // GetClientInfo 客户端信息（IP 等）。
 // 用途：摄像头水印需要显示 IP 时的来源。
@@ -449,7 +436,4 @@ func (h *SystemHandler) GenerateSSLCert(c *gin.Context) {
 	})
 }
 
-// 2026-07-06 精简：PDF 渲染全套下线后，/api/system/fonts 路由 + FontInfo 类型 + 系统字体扫描函数
-// （getSystemFonts / isChineseFont / getFontDirectories / extractFontName）全部删除。
-//   - 业务侧无 PDF 字体选择需求（PDF 由用户在外部填写后上传）
-//   - 前端 system/fonts API 调用点已同步清理
+// PDF 字体相关代码（/api/system/fonts 路由 + FontInfo 类型 + 系统字体扫描函数）已下线。

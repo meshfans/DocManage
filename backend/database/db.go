@@ -19,15 +19,11 @@ import (
 // DB 全局数据库连接（由 InitDatabase 初始化；包内其他文件可直接访问）
 var DB *sql.DB
 
-// lastInitOptions 缓存最近一次成功 InitDatabaseWithOptions 的入参。
-// P0 修复（2026-06-14）：恢复服务（services/restore.go）需要在 doc.db 被替换后重开连接。
-// 2026-07-06 round5 精简：DB 已无加密，Password 字段移除，opts 仍保留（恢复路径仍需 reload）。
+// lastInitOptions 缓存最近一次 InitDatabaseWithOptions 的入参。
+// 恢复服务（services/restore.go）在 doc.db 被替换后调用 ReloadDatabase 重开连接。
 var lastInitOptions atomic.Pointer[DatabaseInitOptions]
 
 // DatabaseInitOptions 数据库初始化选项。
-// 第四阶段（Phase 4.0）：把硬编码的 DSN 改为配置驱动，
-// 默认开 WAL / NORMAL / 64MB 缓存，便于后续 Phase 4.1 增量备份。
-// 2026-07-06 round5 精简：移除 Password 字段（DB 加密已下线）。
 type DatabaseInitOptions struct {
 	Path              string
 	JournalMode       string // WAL / DELETE / TRUNCATE / MEMORY / OFF
@@ -58,25 +54,15 @@ func (o *DatabaseInitOptions) fillDefaults() {
 
 // InitDatabase 打开 SQLite 数据库、建表、建索引、写入种子用户。
 // 由 main.go 在启动时调用一次。
-//
-// 2026-07-06 round5 精简：原 (dbPath, dbPassword) 双参数已废弃为单参数（DB 加密下线）。
-// 旧调用点必须改为 InitDatabaseWithOptions，保留本函数仅为防 0 参调用方编译报错。
 func InitDatabase(dbPath string) error {
 	return InitDatabaseWithOptions(DatabaseInitOptions{
 		Path: dbPath,
 	})
 }
 
-// InitDatabaseWithOptions 第四阶段（Phase 4.0）推荐入口。
-// 接受完整 DatabaseInitOptions，构造 DSN 时使用配置驱动而非硬编码。
+// InitDatabaseWithOptions 接受完整 DatabaseInitOptions 打开数据库。
 func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 	opts.fillDefaults()
-	// Minor 清理（2026-06-14 二次审查）：修正注释语义。
-	// 历史注释："保存最后一次成功的 init options"
-	// 实际语义：保存最后一次调用的 init options（不一定是"成功"的，因为后续
-	//           sql.Open/Ping/createTables/migrateDatabase 任何一步失败都已存进去）。
-	//           对 ReloadDatabase 影响：失败后 Reload 会重跑同样步骤，会同样失败，
-	//           所以语义错误不影响实际行为，但为了准确性改为"最后一次调用"。
 	lastInitOptions.Store(&opts)
 
 	dir := filepath.Dir(opts.Path)
@@ -84,10 +70,9 @@ func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 		return err
 	}
 
-	// 1) DSN：包含全部 PRAGMA（journal_mode / synchronous / cache_size /
-	//    wal_autocheckpoint / busy_timeout）。
-	//    注：DSN 参数仅作为初始值，applyWALConfig() 会再显式 PRAGMA 设置（更可靠）。
-	// 2026-07-06 round5 精简：移除 _pragma_key（go-sqlcipher 改回 mattn/go-sqlite3，DB 不再加密）。
+	// DSN：包含全部 PRAGMA（journal_mode / synchronous / cache_size /
+	// wal_autocheckpoint / busy_timeout）。
+	// 注：DSN 参数仅作为初始值，applyWALConfig() 会再显式 PRAGMA 设置（更可靠）。
 	dsn := fmt.Sprintf(
 		"file:%s?_journal_mode=%s&_synchronous=%s&_cache_size=%d&_busy_timeout=%d&_wal_autocheckpoint=%d",
 		opts.Path, opts.JournalMode, opts.Synchronous, opts.CacheSize, opts.BusyTimeout, opts.WalAutocheckpoint,
@@ -107,13 +92,13 @@ func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 		return fmt.Errorf("数据库连接失败: %w", err)
 	}
 
-	// 2) 显式应用 WAL / checkpoint 配置（DSN 参数只是初始值，
-	//    PRAGMA 设置才是权威）。这样日志能确认实际生效的模式。
+	// 显式应用 WAL / checkpoint 配置（DSN 参数只是初始值，
+	// PRAGMA 设置才是权威）。这样日志能确认实际生效的模式。
 	if err := applyWALConfig(db, opts); err != nil {
 		return fmt.Errorf("应用 WAL 配置失败: %w", err)
 	}
 
-	// 3) 启动日志：明确告知当前模式（出问题排查时关键）
+	// 启动日志：明确告知当前模式（出问题排查时关键）
 	journalMode, err := querySinglePragma(db, "journal_mode")
 	if err != nil {
 		utils.Warn("查询 journal_mode 失败: %v", err)
@@ -124,7 +109,6 @@ func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 		}
 	}
 
-	// 4) 保存为全局连接
 	DB = db
 
 	if err = createTables(); err != nil {
@@ -157,8 +141,7 @@ func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 }
 
 // ReloadDatabase 用上次保存的 init options 重新初始化连接。
-// P0 修复（2026-06-14）：恢复服务（services/restore.go）覆盖 doc.db 后调用本函数重开连接。
-// 2026-07-06 round5 精简：删除"调用方必须先 Close 否则 sqlcipher panic"备注（已无 sqlcipher）。
+// 恢复服务（services/restore.go）覆盖 doc.db 后调用本函数重开连接。
 //
 // 关键点：
 //  1. 如果 DB 还没 Init 过（lastInitOptions==nil）→ 报错
@@ -180,9 +163,6 @@ func HasInitOptions() bool {
 
 // LastInitOptions 返回最近一次 Init 时保存的 options 值快照（值传递，不可改全局）。
 // 调用方应在 HasInitOptions() == true 时再调用。未初始化时返回零值。
-//
-// 2026-07-06 round5 精简：原 GetDatabasePassword() 随 sqlcipher 下线而删除。
-// 备份演练仍需读 lastInitOptions 复用 journal/同步/缓存配置，但不再需要 Password 字段。
 func LastInitOptions() DatabaseInitOptions {
 	opts := lastInitOptions.Load()
 	if opts == nil {
@@ -373,11 +353,7 @@ func createTables() error {
 		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 	);
 
-	-- 2026-07-06 精简：flow_template / flow_step / flow_instance / flow_instance_step 四张表已下线。
-	--   流转模块全套删除（backend/handlers/flow_*.go、database/flow.go、前端 flow 页面 + 权限码 + 路由）
-	--   如历史库中仍有数据，DDL 不主动 DROP（避免破坏既有部署），启动后表为空、被孤立。
-
-	-- 定时任务定义表（阶段 13：定时任务调度框架）
+	-- 定时任务定义表
 	CREATE TABLE IF NOT EXISTS scheduled_task (
 		id              INTEGER PRIMARY KEY AUTOINCREMENT,
 		task_key        TEXT    UNIQUE NOT NULL,
@@ -450,17 +426,16 @@ func createTables() error {
 	);
 	-- 索引见 createIndexes()
 
-	-- 第十一阶段：提醒订阅表
-	-- 第十三阶段 v4：通用多态关联 + 多 ID 设计
+	-- 提醒订阅表
+	-- 通用多态关联 + 多 ID 设计
 	--   link_type 决定查哪张表：
 	--     - 'customer'              : 客户级订阅（展开为该客户所有 active 合同）
-	--     - 'contract'              : 主合同级订阅
 	--     - 'third_party_contract'  : 第三方合同级订阅
 	--   link_id 为 TEXT（CSV 格式，逗号分隔），支持同类型多 ID：
 	--     - '5'        : 单 ID 5
 	--     - '1,2,3'    : 多 ID [1, 2, 3]（自动去重 + 跳过非法）
-	--   应用层 ParseReceiverIDs() 负责解析（与 receiver_id 共用 helper）。
-	-- 第十三阶段：receiver_type / receiver_id 决定提醒发给谁（语义不变）。
+	--   应用层 ParseReceiverIDs() 负责解析。
+	-- receiver_type / receiver_id 决定提醒发给谁。
 	CREATE TABLE IF NOT EXISTS reminder_subscription (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		template_id   INTEGER NOT NULL,
@@ -486,10 +461,10 @@ func createTables() error {
 	);
 	-- 索引见 createIndexes()
 
-	-- 第十一阶段：提醒日志表（实际发送记录，含去重 UNIQUE 约束）
+	-- 提醒日志表（实际发送记录，含去重 UNIQUE 约束）
 	-- 同一合同+同一模板+同 trigger_date 仅能成功插入一次（DB 层去重）
 	-- contract_no / contract_title / customer_name 冗余存储，关联对象删除后仍能查
-	-- contract_id 支持 contract（主合同）和 third_party_contract（第三方合同）
+	-- contract_id 支持 third_party_contract（第三方合同）
 	CREATE TABLE IF NOT EXISTS reminder_log (
 		id               INTEGER PRIMARY KEY AUTOINCREMENT,
 		template_id      INTEGER NOT NULL,
@@ -584,11 +559,11 @@ func createTables() error {
 		FOREIGN KEY (created_by) REFERENCES users(id)
 	);
 
-	-- 备份清单表（第四阶段 Phase 4.1）
+	-- 备份清单表
 	-- 记录每次备份（full / incremental）的元数据，用于：
 	--   1. 备份列表展示
 	--   2. 增量恢复时定位父全量（parent_id 链）
-	--   3. 完整性校验（三哈希：hash_sm3 / hash_sha256 / hash_combined — 与 media/seal/contract 一致）
+	--   3. 完整性校验（三哈希：hash_sm3 / hash_sha256 / hash_combined）
 	--   4. 异地备份追踪（offsite_url / offsite_status）
 	--   5. 保留天数链式管理（keep_until：手动备份 = 0 表示永不清除）
 	-- 6 个索引（见 createIndexes）
@@ -618,9 +593,6 @@ func createTables() error {
 		verified_result   TEXT    NOT NULL DEFAULT '',       -- ok / corrupted / missing / ''
 		created_by        INTEGER NOT NULL DEFAULT 0,
 		keep_until        INTEGER NOT NULL DEFAULT 0        -- 自动清理截止时间：0 = 永不清除（手动备份），>0 = unix 时间戳
-		-- 2026-07-06 round5 精简：移除 4 个加密列（encrypted / encryption_algo / encrypt_passphrase / hkdf_inputs_hash）
-		--   - 备份 zip 不再 AES 加密 → 无需标记
-		--   - 已有 doc.db 需删后重置才能用新 schema（user 确认）
 	);
 
 	-- RBAC：role 表（角色定义）
@@ -665,7 +637,6 @@ func createTables() error {
 // createIndexes 建所有索引。
 func createIndexes() error {
 	indexes := []string{
-		// 2026-07-06 精简：contract 主合同表已下线，相关索引同步删除
 		`CREATE INDEX IF NOT EXISTS idx_customer_department ON customer(department_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_media_department ON media(department_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_third_party_contract_department ON third_party_contract(department_id)`,
@@ -679,7 +650,6 @@ func createIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_users_employee_no ON users(employee_no)`,
 		`CREATE INDEX IF NOT EXISTS idx_department_parent ON department(parent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_department_level ON department(level)`,
-		// 2026-07-06 精简：flow_* / template 索引（两表已下线，索引同步删除）
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_task_active ON scheduled_task(is_active)`,
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_task_key ON scheduled_task(task_key)`,
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_task_type ON scheduled_task(task_type)`,
@@ -688,13 +658,13 @@ func createIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_task_audit_task ON scheduled_task_audit(task_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_task_audit_action ON scheduled_task_audit(action, created_at DESC)`,
 
-		// third_party_contract 索引（从 createTables 迁入）
+		// third_party_contract 索引
 		`CREATE INDEX IF NOT EXISTS idx_tpc_status  ON third_party_contract(status, updated_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_tpc_customer ON third_party_contract(customer_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_tpc_end_date ON third_party_contract(end_date) WHERE end_date > 0`,
 		`CREATE INDEX IF NOT EXISTS idx_tpc_no_file  ON third_party_contract(file_size) WHERE file_size = 0`,
 
-		// 媒体表 12 个索引（v2.1 含 customer_id / user_id / v2.2 含 bindings）
+		// 媒体表索引
 		`CREATE INDEX IF NOT EXISTS idx_media_type        ON media(type)`,
 		`CREATE INDEX IF NOT EXISTS idx_media_source      ON media(source)`,
 		`CREATE INDEX IF NOT EXISTS idx_media_status      ON media(status) WHERE deleted_at = 0`,
@@ -706,10 +676,10 @@ func createIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_media_hash_sm3    ON media(hash_sm3)`,
 		`CREATE INDEX IF NOT EXISTS idx_media_hash_sha256 ON media(hash_sha256)`,
 		`CREATE INDEX IF NOT EXISTS idx_media_deleted_at  ON media(deleted_at)`,
-		// P2 修复：添加 bindings 索引（虽然 LIKE 模糊匹配效果有限，但能让查询走索引扫描）
+		// bindings 索引（LIKE 模糊匹配效果有限，但能让查询走索引扫描）
 		`CREATE INDEX IF NOT EXISTS idx_media_bindings    ON media(bindings)`,
 
-		// 备份清单索引（第四阶段 Phase 4.1）
+		// 备份清单索引
 		`CREATE INDEX IF NOT EXISTS idx_bm_type        ON backup_manifest(type)`,
 		`CREATE INDEX IF NOT EXISTS idx_bm_status      ON backup_manifest(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_bm_started_at  ON backup_manifest(started_at DESC)`,
@@ -718,20 +688,20 @@ func createIndexes() error {
 		// 链式清理索引：仅索引 keep_until > 0 的（手动备份 = 0 不参与）
 		`CREATE INDEX IF NOT EXISTS idx_bm_keep_until  ON backup_manifest(keep_until) WHERE keep_until > 0`,
 
-		// 提醒业务索引（第十一阶段）
+		// 提醒业务索引
 		`CREATE INDEX IF NOT EXISTS idx_rt_active    ON reminder_template(is_active)`,
 		`CREATE INDEX IF NOT EXISTS idx_rt_rule_type ON reminder_template(rule_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_rs_template ON reminder_subscription(template_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rs_link    ON reminder_subscription(link_type, link_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rs_active   ON reminder_subscription(is_active)`,
-		// 2026-06-29 RBAC v3 P1：data_scope 过滤索引
+		// data_scope 过滤索引
 		`CREATE INDEX IF NOT EXISTS idx_rs_department ON reminder_subscription(department_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rl_template ON reminder_log(template_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rl_customer  ON reminder_log(customer_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rl_contract  ON reminder_log(contract_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rl_date      ON reminder_log(trigger_date)`,
 
-		// 第十三阶段：接收人优化新增索引
+		// 接收人优化索引
 		`CREATE INDEX IF NOT EXISTS idx_customer_owner      ON customer(owner_user_id)     WHERE owner_user_id IS NOT NULL`,
 
 		// RBAC 索引

@@ -27,12 +27,8 @@ import { isDocClient } from "@/utils/isDocClient";
 // 白名单：登录失败 / 注册失败 等业务 403 不应触发（如密码错误返回 403）
 //   - 当前实现：所有 403 都提示。若误报严重，可加 url 黑名单。
 //
-// === 2026-06-28 临时调整：隐藏右下角"权限不足"弹窗 ===
-// 原因：与印章"设为默认"功能联调时，业务级 gate（canManageSeals）与 RBAC gate 双层冲突，
-//       普通用户操作时大量 403 弹窗干扰排查。
-// 保留：5s 防抖 + refreshFromApi() 异步拉新权限（下次 reload 自动生效）。
-// 移除：ElNotification 弹窗。
-// 恢复方式：把下方被注释的 ElNotification 块解开即可。
+// === 403 提示策略：5s 防抖 + refreshFromApi() 异步拉新权限 ===
+// 当前为静默处理（不弹窗）。如需恢复，把下方被注释的 ElNotification 块解开即可。
 let last403NotifyAt = 0;
 const FORBIDDEN_NOTIFY_DEBOUNCE_MS = 5000;
 let refreshScheduled = false;
@@ -75,9 +71,9 @@ function handleGlobal403(error: PureHttpError): void {
   }
 }
 
-// 同时兼容浏览器（vite proxy）和 Tauri 桌面客户端（127.0.0.1:18080 proxy.rs）：
-//   - Tauri：WebView 加载 127.0.0.1:18080，proxy.rs 转发 /api/* → 后端
-//   - 浏览器：vite dev server 同源，server.proxy 转发 /api/* → 后端（vite 字段名，不改）
+// 同时兼容浏览器（vite proxy）和 DocManage 客户端（127.0.0.1:18080 内嵌代理）：
+//   - DocManage Client：WebView 加载 127.0.0.1:18080，内嵌代理转发 /api/* → 后端
+//   - 浏览器：vite dev server 同源，server.proxy 转发 /api/* → 后端
 function getBaseUrl(): string {
   if (isDocClient()) {
     const platformConfig = getConfig();

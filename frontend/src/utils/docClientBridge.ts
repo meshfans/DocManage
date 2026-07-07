@@ -1,8 +1,7 @@
 import { ElMessage } from "element-plus";
 import { isDocClient } from "./isDocClient";
 
-/** DocManage Client (Tauri) HTTP 桥 base URL
- *  - Rust 端在 client/src-tauri/src/lib.rs 起 server，监听 127.0.0.1:9999 */
+/** DocManage Client 桌面客户端 HTTP 桥 base URL（监听 127.0.0.1:9999）*/
 export const BRIDGE_URL = "http://127.0.0.1:9999";
 
 export interface BridgeCall {

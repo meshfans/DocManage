@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ==================== 管理员权限统一校验（P1 修复 2026-06-14）====================
+// ==================== 管理员权限统一校验 ====================
 //
 // 设计目标：
 //   1. **统一入口**：所有"需要 admin 才能调"的 HTTP API 必须走 RequireAdmin(c)。
@@ -21,43 +21,17 @@ import (
 //   3. **可观测**：失败时统一打 ERROR 日志（username / path / IP），便于安全审计。
 //   4. **可分支**：用 IsAdmin(c) 做条件分支（"admin 可看更多"），不强制退出。
 //
-// 二次审查（2026-06-14 21:30）覆盖：
-//   - customer.go         9 处 → 全部用 RequireAdmin
-//   - system_config.go    3 处 → 全部用 RequireAdmin
-//   - audit.go            1 处 → 用 RequireAdmin
-//   - seal.go             1 处（AssignSeal）→ 用 RequireAdmin
-//   - hash_handler.go     3 处 → 删除局部 requireAdmin，统一用 RequireAdmin
-//   - backup.go           1 处（Delete）→ 用 RequireAdmin
-//   - media.go            5 处（isAdmin 条件分支）→ 用 IsAdmin
-//   - seal.go             4 处（isAdmin 条件分支）→ 用 IsAdmin
-//   - third_party.go      2 处（isAdmin 条件分支）→ 用 IsAdmin
-//
-// v0.2 安全加固（2026-06-14 22:00）：
-//   - RequireAdmin 从 JWT-only 升级为 DB-backed（调 IsAdminUser）
-//   - IsAdmin 保持 JWT-only（性能优先，用于分支）
-//   - 用法决策树见下方注释
-//
-// ----------------------------------------------------------------------------
-
-// RequireAdmin 强制 RBAC：admin 角色才能继续访问（gate，写 403 + ERROR 日志）。
-//
-// v0.2（二次审查 2026-06-14）：从 JWT-only 升级为 DB-backed。
-//   - 调用 IsAdminUser 查 DB users.roles（不是只看 JWT username）
+// RequireAdmin 从 JWT-only 升级为 DB-backed（调 IsAdminUser 查 users.roles）：
 //   - 优点：admin 撤销角色后旧 JWT 立即失效
 //   - 代价：每次 admin check 多 1 次 DB 查询（gate 场景，可接受）
-//   - 替代方案：v1 把 roles 写进 JWT claims，本函数 0 DB 查询
 //
 // 用法决策树：
 //   - 拦截 / gate / 删除 / 改密 → 用 RequireAdmin（必须安全）
 //   - 列表过滤 / 显示控制 / 性能敏感分支 → 用 IsAdmin（JWT-only，性能优先）
 //
-// TODO（精细化 RBAC 路线图）：
-//
-//   v0.2（当前）：IsAdminUser 查 DB users.roles
-//   v1（短期）：user 表加 role 枚举（admin/manager/user），JWT claims 加 role 字段
-//              → IsAdmin 从 JWT 直接读，0 DB 查询
-//   v2（中期）：permissions TEXT[] 细粒度权限码 → RequirePermission(c, "code")
-//   v3（远期）：role_permissions 关系表 + UI 配置
+// ----------------------------------------------------------------------------
+
+// RequireAdmin 强制 RBAC：admin 角色才能继续访问（gate，写 403 + ERROR 日志）。
 func RequireAdmin(c *gin.Context) bool {
 	if IsAdminUser(c) {
 		return true
@@ -79,23 +53,18 @@ func RequireAdmin(c *gin.Context) bool {
 // 用法决策树：
 //   - 拦截 / gate / 删除 / 改密 → 用 RequireAdmin（必须安全）
 //   - 列表过滤 / 显示控制 / 性能敏感 → 用 IsAdmin（接受不立即生效）
-//   - 等 v1（JWT 携带 roles）后两者都 0 DB 查询 + 立即生效
-//
-// 2026-06-25 P2-8.1：与 IsRBACAdmin 完全等价（都是 username == "admin"）。
-// 语义上：IsAdmin 是更通用的 JWT 快速检查，IsRBACAdmin 是 RBAC 语境下的别名。
-// 新代码请用 IsAdmin；IsRBACAdmin 保留为 deprecated。
 func IsAdmin(c *gin.Context) bool {
 	return c.GetString("username") == "admin"
 }
 
 // ==================== RBAC v2：细粒度权限码（permission_code）====================
 //
-// 2026-06 新增：基于 role + permission 两表 + permission_code 通配符的 gate。
+// 基于 role + permission 两表 + permission_code 通配符的 gate。
 // 设计要点：
 //   1. effective permissions = users.permissions ∪ Σ(role.permissions)
 //                            ∩ permission.status='active'
 //   2. 通配符 "*:*:*" 直接命中所有权限（admin 角色专用）
-//   3. 进程内 30s 缓存（per-user）+ 60s 缓存（API → permission_codes）
+//   3. 进程内 5min 缓存（per-user / per-API）
 //   4. 角色/权限/user.roles 变更时调用 InvalidateAllPermsCache() 清缓存
 
 type cachedPerms struct {
@@ -110,15 +79,13 @@ type cachedAPIPerms struct {
 
 var (
 	permsCache sync.Map
-	// permsCacheTTL 缓存有效期。
-	// 2026-06-28 同步调整：与 dataScopeCache 一致延长到 5min。
-	// 主动失效已覆盖所有已知路径（InvalidateAllPermsCache + InvalidatePermsCache(username)）。
+	// 缓存有效期：5 分钟。主动失效已覆盖所有已知路径。
 	permsCacheTTL    = 5 * time.Minute
 	apiPermsCache    sync.Map
 	apiPermsCacheTTL = 5 * time.Minute
 )
 
-// GetEffectivePermissionsCached 读有效权限码（带 30s 缓存）
+// GetEffectivePermissionsCached 读有效权限码（带 5min 缓存）
 func GetEffectivePermissionsCached(username string) ([]string, error) {
 	if v, ok := permsCache.Load(username); ok {
 		c := v.(*cachedPerms)
@@ -144,8 +111,8 @@ func GetEffectivePermissionsCached(username string) ([]string, error) {
 	return perms, nil
 }
 
-// GetPermissionCodesForAPICached API → permission_code 反查（带 60s 缓存）
-// 替代直接调 database.GetPermissionCodesForAPI：每次请求都扫 178 行做 path 匹配会很慢
+// GetPermissionCodesForAPICached API → permission_code 反查（带 5min 缓存）
+// 替代直接调 database.GetPermissionCodesForAPI：每次请求都扫描 permission 表做 path 匹配会很慢。
 func GetPermissionCodesForAPICached(method, realPath string) ([]string, error) {
 	key := method + " " + realPath
 	if v, ok := apiPermsCache.Load(key); ok {

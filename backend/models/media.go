@@ -71,8 +71,8 @@ type MediaTag struct {
 }
 
 // MediaBinding 媒体与文档的关联。
-// target_type 字典：contract（合同/在线文档） / third_party（三方合同）
-// role 字典：attachment（附件） / evidence（证据） / original（原件） / copy（副本）
+// target_type 字典：third_party（三方合同）
+// role 字典：attachment（附件） / original（原件） / copy（副本）
 type MediaBinding struct {
 	TargetType string `json:"target_type"`
 	TargetID   int64  `json:"target_id"`

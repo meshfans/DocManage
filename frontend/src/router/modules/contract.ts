@@ -1,8 +1,3 @@
-// 2026-06-25 P2-8.2 修复：合并 contractList.ts → contract.ts。
-// 2026-07-06 精简：删主合同（在线文档）；contract 路由父菜单改为"文档列表"，仅保留第三方合同。
-//   - 删除：/contract/edit（主合同编辑页）、MineContractList（主合同列表）
-//   - 保留：/contract/list（指向 ThirdPartyContractList）、/contract/third-party-detail
-
 export default {
   path: "/contract",
   name: "Contract",

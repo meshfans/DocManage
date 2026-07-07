@@ -109,11 +109,8 @@ func (v *BackupVerifier) verifyManifest(m *database.BackupManifest) *VerifyResul
 		VerifiedAt: startTime.Unix(),
 	}
 
-	// 2026-06-27 修复：恢复审计记录（restore_audit）不应走"文件存在 + 哈希校验"流程
-	//   - 审计记录没有真实文件路径（FilePath 是人读的恢复摘要 "restore: full_id=N, ..."）
-	//   - 如果走到 os.Stat 会失败，被错误地标记为 missing → 备份管理界面显示"丢失"
-	//   - 审计记录在 writeRestoreAudit 已直接设为 verified，无需再验证
-	//   - 这里直接返回 "ok" 并把 verified_result 标记为 "restore_audit"，保留 verified 状态
+	// 恢复审计记录（restore_audit）没有真实文件路径（FilePath 是人读的恢复摘要），
+	// 不应走"文件存在 + 哈希校验"流程，否则 os.Stat 失败会被错误地标记为 missing。
 	if m.Type == database.BackupTypeRestoreAudit {
 		result.Result = "ok"
 		result.VerifiedAt = startTime.Unix()

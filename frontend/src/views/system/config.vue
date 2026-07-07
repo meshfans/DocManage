@@ -158,18 +158,8 @@ const configFile = ref({
     days_to_keep: 90,
     database_enabled: true,
     upload_enabled: true
-    // 2026-07-06 round6 精简：encrypt_local / encrypt_passphrase 字段已删除
-    //   后端配置不再支持备份加密；备份 zip 永远是明文
   },
-  // 2026-07-06 round6 精简：license 字段已删除
-  //   后端不再做硬件指纹绑定 / license 信封验证 / 到期控制
-  // 2026-07-06 round6 精简：pdf 字段已删除
-  //   PDF 字体配置后端不再读取（watermark.go 用 pdfcpu 内置 Helvetica）
 });
-
-// 2026-07-06 round6 精简：FontInfo / systemFonts / selectedFont 全部删除
-//   字体选择 UI 已下线（后端 PDF 字体配置字段 pdf.font 已删）
-//   /api/system/fonts 路由也已在后端 round2 删除（前端不应再调用）
 
 const loadConfig = async () => {
   loading.value = true;

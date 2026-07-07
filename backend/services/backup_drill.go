@@ -81,10 +81,7 @@ func DrillLatestBackup() (*DrillResult, error) {
 		return result, err
 	}
 
-	// 4) 2026-07-06 round5 精简：删除解密分支（m.Encrypted / DecryptZip 不再用）
-	//    备份 zip 现在永远是明文，直接 extractZipForDrill(m.FilePath)
-
-	// 5) 解压 zip
+	// 4) 解压 zip（备份永远是明文，直接解压）
 	if err := extractZipForDrill(m.FilePath, extractDir); err != nil {
 		result.Error = fmt.Sprintf("解压失败: %v", err)
 		return result, err
@@ -110,7 +107,6 @@ func DrillLatestBackup() (*DrillResult, error) {
 
 	if drillErr != nil {
 		result.Error = drillErr.Error()
-		// 2026-07-06 round5 精简：删除"SQLCipher 提示"分支（DB 已不加密，doc.db 现在是明文 SQLite）
 		utils.LogError("[Drill] ❌ 演练失败: id=%d, err=%v", m.ID, drillErr)
 	} else {
 		result.Success = true
@@ -133,16 +129,8 @@ func DrillLatestBackup() (*DrillResult, error) {
 
 // findLatestSuccessfulFullBackup 查最近一次成功的全量备份。
 //
-// 2026-06-27 bug #2 修复：排除恢复审计记录
-//   - 新审计：type = 'restore_audit' → 已通过 "type = BackupTypeFull" 过滤自动排除
-//   - 旧审计（兼容存量）：type='full' 但 verified_result='restore_audit' → 用 NOT 子句显式排除
-//   - 否则演练会把 FilePath="restore: full_id=21..." 当 zip 路径打开 → 系统找不到文件
-//
-// 2026-06-27 🟡 #4 改造：正向过滤为主，NOT 子句显式排除旧审计
-//   - 旧实现用 `type != ? AND (type != ? OR verified_result != ?)` 双层负向过滤，
-//     表达不直观且对新增 backup type 防御性不够
-//   - 新实现：`type = BackupTypeFull AND NOT (type = 'full' AND verified_result = 'restore_audit')`
-//     自解释：列出"我们要的全量备份"，然后排除"伪装成全量的旧审计"
+// 排除恢复审计记录（type='restore_audit' 或旧审计 verified_result='restore_audit'），
+// 否则演练会把 FilePath="restore: full_id=21..." 当 zip 路径打开 → 系统找不到文件。
 func findLatestSuccessfulFullBackup() (*database.BackupManifest, error) {
 	row := database.DB.QueryRow(`
 		SELECT id, snowid, type, parent_id, status, file_path, file_size,
@@ -240,11 +228,9 @@ func findDrillDB(extractDir string) (string, error) {
 
 // runDrillChecks 执行 PRAGMA integrity_check + 抽查关键表。
 //
-// 抽查表：customer, seal, media, user（核心业务表）
+// 抽查表：customer, media, user（核心业务表）
 //
-// 2026-07-06 round5 精简：DB 已不加密，doc.db 是明文 SQLite。
-//   删 dbPassword / _pragma_key 注入（无加密），仍复用 initOpts 的 journal/同步/缓存配置。
-//   演练只读（mode=ro）不会污染备份文件。
+// 演练只读（mode=ro）不会污染备份文件。
 func runDrillChecks(dbPath string) (integrity string, tables int, rows int, err error) {
 	if !database.HasInitOptions() {
 		return "", 0, 0, fmt.Errorf("未初始化过 DB（lastInitOptions 为空）")
@@ -276,7 +262,7 @@ func runDrillChecks(dbPath string) (integrity string, tables int, rows int, err 
 	}
 
 	// 2) 抽查关键表（确保 schema 与生产一致）
-	checkTables := []string{"customer", "seal", "media", "user"}
+	checkTables := []string{"customer", "media", "user"}
 	for _, table := range checkTables {
 		// 表是否存在（可能备份是早期版本）
 		var name string

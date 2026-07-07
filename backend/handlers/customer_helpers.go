@@ -72,9 +72,7 @@ func validateUSCC(code string) error {
 // ==================== JSON helpers ====================
 
 // isUniqueConstraintError reports whether err is a SQLite UNIQUE constraint
-// violation on the given index name. We rely on the index name appearing
-// in the error message (go-sqlcipher follows the same convention as
-// mattn/go-sqlite3).
+// violation on the given index name.
 func isUniqueConstraintError(err error, indexName string) bool {
 	if err == nil {
 		return false

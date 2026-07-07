@@ -184,7 +184,6 @@ backend/
 
 **Schema 总览**（16 张表）：`users` / `messages` / `customer` / `system_config` / `department` / `scheduled_task` / `scheduled_task_log` / `scheduled_task_audit` / `reminder_template` / `reminder_subscription` / `reminder_log` / `media` / `third_party_contract` / `backup_manifest` / `role` / `permission`。
 
-> 旧表 DDL（`template` / `contract` / `seal` / `flow_*` / `audit_log`）保留以兼容历史数据，但不再被业务代码使用。
 
 ## 5.2 `frontend/` — 业务前端
 

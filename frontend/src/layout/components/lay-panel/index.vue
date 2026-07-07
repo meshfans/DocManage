@@ -32,12 +32,12 @@ const { onReset: onFrontendReset } = useDataThemeChange();
 /**
  * 整合后的"清空缓存"按钮行为：
  * 1. 前端业务 reset：清 token、跳登录页、清理 localStorage / pinia 等
- * 2. Tauri 客户端 reset（仅在 Tauri 内）：清 docmanage_url + 回到输入界面
+ * 2. DocManage Client reset（仅在桌面客户端内）：清 docmanage_url + 回到输入界面
  */
 const onResetClient = async () => {
   // 1. 前端业务 reset
   onFrontendReset()
-  // 2. Tauri Client reset（仅在 Tauri 容器内时）
+  // 2. DocManage Client reset（仅在桌面客户端容器内时）
   if (isDocClient()) {
     await bridgeCall({
       operation: "reset",
