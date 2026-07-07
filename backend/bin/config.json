@@ -1,0 +1,55 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": "8443",
+    "domain": "192.168.31.88",
+    "enable_ssl": false,
+    "ssl_cert": "./certs/public.pem",
+    "ssl_key": "./certs/private.pem"
+  },
+  "jwt": {
+    "secret": "6Oyh3cemeIvuEJCbfK4A2vnkP6oxbgP4",
+    "access_expire": "2h",
+    "refresh_expire": "72h"
+  },
+  "database": {
+    "path": "./data/doc.db",
+    "journal_mode": "DELETE",
+    "synchronous": "NORMAL",
+    "cache_size": -64000,
+    "wal_autocheckpoint": 1000,
+    "busy_timeout": 5000
+  },
+  "cors": {
+    "allowed_origins": [
+      "*"
+    ]
+  },
+  "upload": {
+    "dir": "./uploads",
+    "max_size": 10485760
+  },
+  "worm": {
+    "dir": "./uploads/worm",
+    "export_dir": "./uploads/exports"
+  },
+  "log": {
+    "dir": "./logs",
+    "level": "warn",
+    "days_to_keep": 90,
+    "enabled": true
+  },
+  "backup": {
+    "enabled": true,
+    "dir": "./backups",
+    "days_to_keep": 90,
+    "database_enabled": true,
+    "upload_enabled": true
+  },
+  "scheduler": {
+    "enabled": true,
+    "timezone": "Asia/Shanghai",
+    "log_retention": 1000,
+    "log_output_max_kb": 4
+  }
+}

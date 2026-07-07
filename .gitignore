@@ -1,0 +1,45 @@
+# ==================== Build artifacts ====================
+# Release output
+/dist/
+
+# Backend (Go) build outputs
+/backend/bin/doc-server.exe
+/backend/bin/doc-server-*.exe
+/backend/bin/build-info.json
+/backend/bin/data/
+/backend/web/dist/
+# E2E test temp dirs (created by third_party_e2e_test.ps1)
+/backend/bin/.tp_bulk_e2e_*/
+
+# ==================== Node / Frontend ====================
+/frontend/node_modules/
+/frontend/dist/
+
+# ==================== Logs ====================
+*.log
+/backend/bin/logs/
+
+# ==================== OS / Editor ====================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==================== Go ====================
+*.test
+*.out
+vendor/
+
+# ==================== Environment ====================
+.env
+.env.local
+.env.*.local
+.trae
+AGENTS*
+todo*
+# ==================== License ====================
+__pycache__/
+# Debug 凭证（运行时生成，时间窗口过期后作废；不与 license_config.json 一起入库）
+tools/license/debug_config.json

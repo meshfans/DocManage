@@ -1,0 +1,77 @@
+import { getPluginsList } from "./build/plugins";
+import { include, exclude } from "./build/optimize";
+import { type UserConfigExport, type ConfigEnv, loadEnv } from "vite";
+import {
+  root,
+  alias,
+  wrapperEnv,
+  pathResolve,
+  __APP_INFO__
+} from "./build/utils";
+
+export default ({ mode }: ConfigEnv): UserConfigExport => {
+  const env = loadEnv(mode, root);
+  const {
+    VITE_CDN,
+    VITE_PORT,
+    VITE_COMPRESSION,
+    VITE_PUBLIC_PATH,
+    VITE_API_BASE_URL,
+    VITE_PROXY_TARGET
+  } = wrapperEnv(env);
+
+  return {
+    base: VITE_PUBLIC_PATH,
+    root,
+    resolve: {
+      alias
+    },
+    assetsInclude: ["**/*.ico"],
+    server: {
+      // 端口号
+      port: VITE_PORT,
+      host: "0.0.0.0",
+      // 浏览器 dev 代理：/api/* 转发到后端，避免 CORS
+      // 留空则不启用（生产模式不需要 dev proxy）
+      proxy: VITE_PROXY_TARGET
+        ? {
+            // 2026-07-06 round4：移除 /api/ws、/ws 两条 WS 代理条目（WS 模块下线）
+            "/api": {
+              target: VITE_PROXY_TARGET,
+              changeOrigin: true
+            }
+          }
+        : undefined
+    },
+    plugins: getPluginsList(VITE_CDN, VITE_COMPRESSION),
+    // https://cn.vitejs.dev/config/dep-optimization-options.html#dep-optimization-options
+    optimizeDeps: {
+      include,
+      exclude
+    },
+    build: {
+      // https://cn.vitejs.dev/guide/build.html#browser-compatibility
+      target: "es2015",
+      sourcemap: false,
+      // 消除打包大小超过500kb警告
+      chunkSizeWarningLimit: 4000,
+      // 将小资源内联为 base64（50KB）
+      assetsInlineLimit: 50000,
+      rollupOptions: {
+        input: {
+          index: pathResolve("./index.html", import.meta.url)
+        },
+        // 静态资源分类打包
+        output: {
+          chunkFileNames: "static/js/[name]-[hash].js",
+          entryFileNames: "static/js/[name]-[hash].js",
+          assetFileNames: "static/[ext]/[name]-[hash].[ext]"
+        }
+      }
+    },
+    define: {
+      __INTLIFY_PROD_DEVTOOLS__: false,
+      __APP_INFO__: JSON.stringify(__APP_INFO__)
+    }
+  };
+};

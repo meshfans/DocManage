@@ -1,0 +1,66 @@
+# CGO Configuration for Cross-Platform Compilation
+# SQLite3 requires CGO, so we need proper compiler setup
+
+# Windows (MinGW-w64)
+# Install via MSYS2 or download pre-built binaries
+# https://www.msys2.org/
+#
+# After installing MSYS2, install MinGW:
+#   pacman -S mingw-w64-x86_64-gcc
+#
+# Set environment variables:
+#   export CC=x86_64-w64-mingw32-gcc
+#   export CXX=x86_64-w64-mingw32-g++
+#   export CGO_ENABLED=1
+
+# Linux
+# Install GCC with pthread support:
+#   Ubuntu/Debian: apt-get install gcc libc6-dev
+#   CentOS/RHEL: yum install gcc glibc-devel
+#   Alpine: apk add gcc musl-dev
+#
+# For cross-compilation on Linux to Windows:
+#   apt-get install gcc-mingw-w64
+#   x86_64-w64-mingw32-gcc for Windows x64
+#   i686-w64-mingw32-gcc for Windows x86
+
+# macOS
+# Install GCC via Homebrew:
+#   brew install gcc
+#
+# For cross-compilation to Linux/Windows:
+#   brew install FiloSottile/musl-cross/musl-cross
+#   brew install mingw-w64
+
+# SQLite3 specific
+# The go-sqlite3 package uses CGO to bind to SQLite
+# No additional SQLite libraries needed as it bundles SQLite source
+
+# Recommended compilation flags
+# -ldflags "-s -w"  : Strip debug info, reduce binary size
+# -ldflags "-extldflags '-static'" : Try static linking (may not work with go-sqlite3)
+
+# Example build commands:
+
+# Windows on Windows:
+#   go build -ldflags "-s -w" -o doc-server.exe main.go
+
+# Linux on Linux:
+#   CGO_ENABLED=1 go build -ldflags "-s -w" -o doc-server main.go
+
+# Cross-compile Windows on Linux:
+#   GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
+#     CC=x86_64-w64-mingw32-gcc \
+#     go build -ldflags "-s -w" \
+#     -o doc-server.exe main.go
+
+# Cross-compile Linux on Windows (with MSYS2/MinGW):
+#   GOOS=linux GOARCH=amd64 CGO_ENABLED=1 \
+#     CC=x86_64-linux-gnu-gcc \
+#     go build -ldflags "-s -w" \
+#     -o doc-server main.go
+
+# Docker build (recommended for consistent builds):
+#   docker build -t doc-builder .
+#   docker run --rm -v $(pwd):/build doc-builder \
+#     GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o /build/doc-server main.go
