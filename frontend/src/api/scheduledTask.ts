@@ -1,5 +1,15 @@
 import { http } from "@/utils/http";
 
+// el-tag 的 :type 属性允许的全部取值。
+// 与 ElementPlus 的 ElTag 组件 type prop 同步（见 el-tag 源码）。
+export type ElTagType =
+  | ""
+  | "primary"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info";
+
 // ==================== 类型定义 ====================
 
 export type ScheduledTask = {
@@ -208,7 +218,7 @@ export const formatUnix = (ts: number): string => {
 };
 
 // 状态颜色映射
-export const statusTypeMap: Record<string, "" | "success" | "warning" | "danger" | "info"> = {
+export const statusTypeMap: Record<string, ElTagType> = {
   pending: "info",
   running: "warning",
   success: "success",
@@ -218,7 +228,7 @@ export const statusTypeMap: Record<string, "" | "success" | "warning" | "danger"
 };
 
 // 类型颜色
-export const taskTypeMap: Record<string, "" | "success" | "info"> = {
+export const taskTypeMap: Record<string, ElTagType> = {
   built_in: "success",
   business: "info",
 };

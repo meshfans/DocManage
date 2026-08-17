@@ -285,8 +285,11 @@ class WebSocketService {
             type: "leader-disconnect",
             instanceId: this.instanceId
           });
+          // 兑底：如果 leader-disconnect 消息因 BroadcastChannel 异常（跨 origin / Worker context）丢失，
+          // 其他 tab 不会触发选举，本 tab 也不会自愈。给 leader 自己额外挂一个重连定时器，
+          // 即使没有 follower 响应也能恢复连接。
+          this.attemptReconnect();
         }
-        // 不在这里重连，由 leader-disconnect 消息触发选举统一处理
       };
 
       this.ws.onerror = (error) => {

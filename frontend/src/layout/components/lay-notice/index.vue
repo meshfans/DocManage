@@ -53,8 +53,12 @@ const fetchMessages = async () => {
   }
 };
 
-// 处理实时推送的 new_message：插入到列表顶部 + 角标 +1
-const handleWsNewMessage = (msg: WebSocketMessage) => {
+// 处理实时推送的 new_message：插入到列表顶部 + 重新拉一次未读数确保角标与 DB 一致。
+// 为什么 +1 不可靠：
+//   - noticesNum 在 4 处会被覆盖（fetchMessages / fetchUnreadCount / handleMarkAllAsRead），
+//     WS 推一条后如果用户碰巧触发了这4个分支之一，本地 +1 会被覆盖丢失。
+//   - 重新拉 unread-count 是 1 次小接口，与 DB 严格一致；500ms 内返回。
+const handleWsNewMessage = async (msg: WebSocketMessage) => {
   const content = msg.content || {};
   const messageTab = notices.value.find((n: any) => n.key === "2");
   if (!messageTab) return;
@@ -71,7 +75,8 @@ const handleWsNewMessage = (msg: WebSocketMessage) => {
     },
     ...(messageTab.list || [])
   ];
-  noticesNum.value += 1;
+  // 与 DB 对齐；避免 WS 推 +1 后被其他分支覆盖导致角标漂移
+  await fetchUnreadCount();
   // 弹一个轻提示（可选，避免噪音；目前仅控制台）
   // ElMessage.info(`新消息：${content.title}`);
 };

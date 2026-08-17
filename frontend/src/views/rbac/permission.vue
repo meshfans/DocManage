@@ -410,8 +410,11 @@ async function handleSavePermission() {
   }
 }
 
-// handleSubmit 是模板里的回调名（@click="handleSubmit"）
-const handleSubmit = handleSavePermission;
+// handleSubmit 是模板里的回调名（@click="handleSubmit"），
+// 包成显式函数以便未来 handleSavePermission 改为支持参数/闭包时仍可适配。
+async function handleSubmit() {
+  return handleSavePermission();
+}
 
 async function handleToggleStatus(row: Permission) {
   const newStatus = row.status === "active" ? "disabled" : "active";

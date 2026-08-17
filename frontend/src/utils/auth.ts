@@ -106,6 +106,9 @@ export function setToken(data: DataInfo<Date>) {
       permissionVersion: data?.permissionVersion
     });
   } else {
+    // 静默刷新场景：从 localStorage 恢复 user 字段。
+    // permissionVersion 不从 storage 反查——它由 /api/rbac/permission-version 实时拉取后
+    // 经 setPermVersion 写入 perm_version，user-info 这边不持有副本，避免双源不一致。
     const avatar =
       storageLocal().getItem<DataInfo<number>>(userKey)?.avatar ?? "";
     const username =
@@ -122,8 +125,7 @@ export function setToken(data: DataInfo<Date>) {
       nickname,
       roles,
       permissions,
-      permissionVersion:
-        storageLocal().getItem<DataInfo<number>>(userKey)?.permissionVersion
+      permissionVersion: undefined
     });
   }
 }
