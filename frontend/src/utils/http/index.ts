@@ -294,7 +294,7 @@ class PureHttp {
   }
 
   /** 单独抽离的`post`工具函数 */
-  public post<T, P>(
+  public post<T = any, P = any>(
     url: string,
     data?: P,
     config?: PureHttpRequestConfig

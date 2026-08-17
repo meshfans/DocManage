@@ -28,8 +28,20 @@ import type {
   Media,
   MediaHashes,
   MediaBinding,
+  MediaTag,
   VerifyMediaResult
 } from "@/api/media";
+
+/** ObjectURL + revoke 句柄（用于照片/录像预览） */
+interface MediaBlobUrl {
+  url: string;
+  revoke: () => void;
+}
+
+interface PresetTag {
+  name: string;
+  type: "primary" | "success" | "warning" | "danger" | "info";
+}
 
 const props = defineProps<{
   mediaId: number | null;
@@ -358,7 +370,7 @@ const roleLabelMap: Record<string, string> = Object.fromEntries(
 // ==================== 标签编辑 ====================
 // 预制 tag 词典：用户可在 UI 上一键添加，也可在输入框自定义
 // 顺序：高频在前；颜色按 el-tag 类型（success/info/warning/danger/primary）轮换
-const PRESET_TAGS: { name: string; type: string }[] = [
+const PRESET_TAGS: PresetTag[] = [
   { name: "身份证",      type: "primary" },
   { name: "营业执照",    type: "success" },
   { name: "人像",        type: "info"    },

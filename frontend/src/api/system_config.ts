@@ -24,10 +24,11 @@ export const getPublicSystemConfigs = () => {
 // 管理端点：列出全部配置项（含元信息：默认值 / 描述 / 是否被覆盖）
 // 仅 admin 可调用
 export const listSystemConfigs = () => {
-  return http.request<{ success: boolean; data: ConfigMeta[] }>(
-    "get",
-    "/api/system-config/list"
-  );
+  return http.request<{
+    success: boolean;
+    data: ConfigMeta[];
+    message?: string;
+  }>("get", "/api/system-config/list");
 };
 
 // 修改/新增一个配置项

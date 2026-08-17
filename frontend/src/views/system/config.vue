@@ -189,13 +189,7 @@ const loadConfigFile = async () => {
           ssl_key: "./certs/private.pem"
         };
       }
-      if (!configFile.value.pdf) {
-        // 2026-07-06 round6 精简：保留兜底（兼容老 admin 浏览器缓存可能短暂访问到旧字段）
-        configFile.value.pdf = { font: { default: "", file_path: "" } };
-      }
-      if (!configFile.value.pdf.font) {
-        configFile.value.pdf.font = { default: "", file_path: "" };
-      }
+      // pdf 字段已下线（PDF 字体配置后端不再读取，2026-07-06 round6）
     }
   } catch (e) {
     console.error(e);

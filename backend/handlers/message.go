@@ -5,11 +5,21 @@ import (
 	"doc/utils"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 type MessageHandler struct{}
+
+// wsHandlerForMessage 单例的 WS hub（main.go 启动时通过 SetWebSocketHandlerForMessage 注入）。
+// 用于在 CreateMessage 后通过 SendToUser 实时推送给接收人。
+var wsHandlerForMessage *WebSocketHandler
+
+// SetWebSocketHandlerForMessage 注入 WS hub 单例。在 main.go 启动早期调用一次。
+func SetWebSocketHandlerForMessage(h *WebSocketHandler) {
+	wsHandlerForMessage = h
+}
 
 func NewMessageHandler() *MessageHandler {
 	return &MessageHandler{}
@@ -92,7 +102,21 @@ func (h *MessageHandler) CreateMessage(c *gin.Context) {
 		utils.ErrorWithDetail(c, http.StatusInternalServerError, "创建消息失败", err)
 		return
 	}
-	
+
+	// WebSocket 实时推送：接收人在线时立即推一条 new_message，前端铃铛即时更新。
+	// 离线则下次拉取 getUnreadCount 兜底，SendToUser 内部已是非阻塞。
+	if wsHandlerForMessage != nil {
+		wsHandlerForMessage.SendToUser(req.UserID, "new_message", gin.H{
+			"id":         id,
+			"title":      req.Title,
+			"content":    req.Content,
+			"type":       msgType,
+			"sender_id":  senderID,
+			"user_id":    req.UserID,
+			"created_at": time.Now().Unix(),
+		})
+	}
+
 	utils.Success(c, gin.H{
 		"id": id,
 	})

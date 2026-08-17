@@ -17,11 +17,27 @@ export type DepartmentTree = Department & {
   children: DepartmentTree[];
 };
 
-export type DepartmentResult = {
-  success: boolean;
-  data: Department | DepartmentTree[];
+/** GET /api/departments 返回：{ list: DepartmentTree[], total: number } */
+export type DepartmentListResult = {
+  success?: boolean;
+  list?: DepartmentTree[];
+  total?: number;
 };
 
+/** GET /api/departments/:id 返回：单条 Department 对象 */
+export type DepartmentDetailResult = {
+  success?: boolean;
+  department?: Department;
+};
+
+/** GET /api/departments/:id/users 返回：{ list: User[], total: number } */
+export type DepartmentUsersResult = {
+  success?: boolean;
+  list?: Array<Record<string, unknown>>;
+  total?: number;
+};
+
+/** 写操作（创建/更新/删除）共用的 message-only 返回 */
 export type DepartmentMessageResult = {
   success: boolean;
   message?: string;
@@ -29,15 +45,15 @@ export type DepartmentMessageResult = {
 
 export const getDepartmentTree = (fields?: string) => {
   if (fields) {
-    return http.request<DepartmentResult>("get", "/api/departments", {
+    return http.request<DepartmentListResult>("get", "/api/departments", {
       params: { fields }
     });
   }
-  return http.request<DepartmentResult>("get", "/api/departments");
+  return http.request<DepartmentListResult>("get", "/api/departments");
 };
 
 export const getDepartment = (id: number) => {
-  return http.request<DepartmentResult>("get", `/api/departments/${id}`);
+  return http.request<DepartmentDetailResult>("get", `/api/departments/${id}`);
 };
 
 export const createDepartment = (data: {
@@ -66,5 +82,5 @@ export const deleteDepartment = (id: number) => {
 };
 
 export const getDepartmentUsers = (id: number) => {
-  return http.request<DepartmentResult>("get", `/api/departments/${id}/users`);
+  return http.request<DepartmentUsersResult>("get", `/api/departments/${id}/users`);
 };

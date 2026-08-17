@@ -67,19 +67,33 @@ export interface ListBackupsParams {
   page_size?: number;
 }
 
+/** 后端 utils.Success 包装：{success, data, message} */
+export interface ApiEnvelope<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+}
+
 /** GET /api/backup/list */
 export function listBackups(params: ListBackupsParams = {}) {
-  return http.request<BackupListResp>("get", "/api/backup/list", { params });
+  return http.request<ApiEnvelope<BackupListResp>>(
+    "get",
+    "/api/backup/list",
+    { params }
+  );
 }
 
 /** GET /api/backup/:id */
 export function getBackup(id: number) {
-  return http.request<BackupManifest>("get", `/api/backup/${id}`);
+  return http.request<ApiEnvelope<BackupManifest>>("get", `/api/backup/${id}`);
 }
 
 /** DELETE /api/backup/:id */
 export function deleteBackup(id: number) {
-  return http.request<{ success: boolean }>("delete", `/api/backup/${id}`);
+  return http.request<{ success: boolean; message?: string }>(
+    "delete",
+    `/api/backup/${id}`
+  );
 }
 
 /**
@@ -113,10 +127,11 @@ export async function downloadBackup(id: number) {
 
 /** POST /api/system/backup-now 立即备份（手动） */
 export function backupNow() {
-  return http.request<{ success: boolean; manifest_id: number }>(
-    "post",
-    "/api/system/backup-now"
-  );
+  return http.request<{
+    success: boolean;
+    message?: string;
+    data?: { manifest_id: number };
+  }>("post", "/api/system/backup-now");
 }
 
 /** POST /api/system/restore 恢复（第四阶段 P0 维护模式自动开启） */
@@ -126,7 +141,9 @@ export interface RestorePayload {
   dry_run: boolean;
 }
 export function restoreBackup(payload: RestorePayload) {
-  return http.request<{ success: boolean }>("post", "/api/system/restore", {
-    data: payload
-  });
+  return http.request<{ success: boolean; message?: string }>(
+    "post",
+    "/api/system/restore",
+    { data: payload }
+  );
 }

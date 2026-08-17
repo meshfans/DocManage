@@ -70,7 +70,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from "vue";
 import { Plus } from "@element-plus/icons-vue";
-import { getDepartmentTree } from "@/api/department";
+import { getDepartmentTree, type DepartmentTree } from "@/api/department";
 
 interface Props {
   modelValue?: number | number[];
@@ -108,10 +108,9 @@ const loadDepartmentTree = async () => {
   loading.value = true;
   try {
     const res = await getDepartmentTree("id,name,parent_id,level");
-    if (res.data?.data) {
-      treeData.value = res.data.data;
-    } else if (res.data) {
-      treeData.value = res.data;
+    // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
+    if (Array.isArray(res.list)) {
+      treeData.value = res.list as DepartmentTree[];
     }
   } catch (error) {
     console.error("加载部门树失败:", error);

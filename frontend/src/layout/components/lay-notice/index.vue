@@ -2,16 +2,18 @@
 /**
  * 顶部铃铛通知（lay-notice）。
  *
- * 业务影响：实时推送下线，新消息需用户手动展开铃铛或刷新页面才可见
- *   （getMessages / getUnreadCount 在用户每次打开铃铛时拉取一次）
+ * 实时推送：用户登录后自动建立 WS 连接，新消息通过 new_message 推送即时刷新。
+ * 多 tab 页：wsService 使用 BroadcastChannel 协调 leader/follower，单连接即可覆盖所有 tab。
  */
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { noticesData, ListItem } from "./data";
 import NoticeList from "./components/NoticeList.vue";
 import BellIcon from "~icons/ep/bell";
 import { getMessages, getUnreadCount, markAsRead, markAllAsRead } from "@/api/message";
 import { ElMessage } from "element-plus";
+import { getToken } from "@/utils/auth";
+import { wsService, WebSocketMessage } from "@/utils/websocket";
 
 const router = useRouter();
 
@@ -41,7 +43,7 @@ const fetchMessages = async () => {
         messageTab.list = messages;
       }
 
-      // 角标 = 消息未读数（2026-07-06 round2：移除任务数累加）
+      // 角标 = 消息未读数
       noticesNum.value = messages.filter((m: any) => !m.read).length;
     }
   } catch (error: any) {
@@ -49,6 +51,29 @@ const fetchMessages = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+// 处理实时推送的 new_message：插入到列表顶部 + 角标 +1
+const handleWsNewMessage = (msg: WebSocketMessage) => {
+  const content = msg.content || {};
+  const messageTab = notices.value.find((n: any) => n.key === "2");
+  if (!messageTab) return;
+  // 顶部插入
+  messageTab.list = [
+    {
+      avatar: "",
+      title: content.title || "系统消息",
+      datetime: formatDate(String(content.created_at || msg.timestamp || "")),
+      type: content.type || "system",
+      description: content.content || "",
+      read: false,
+      id: content.id
+    },
+    ...(messageTab.list || [])
+  ];
+  noticesNum.value += 1;
+  // 弹一个轻提示（可选，避免噪音；目前仅控制台）
+  // ElMessage.info(`新消息：${content.title}`);
 };
 
 const fetchUnreadCount = async () => {
@@ -106,6 +131,21 @@ const handleMarkAllAsRead = async () => {
 
 onMounted(() => {
   fetchMessages();
+
+  // 建立 WebSocket 连接（多 tab 自动协调 leader/follower）
+  const tokenInfo = getToken();
+  if (tokenInfo?.accessToken) {
+    wsService.onMessage = (data: WebSocketMessage) => {
+      if (data.type === "new_message") {
+        handleWsNewMessage(data);
+      }
+    };
+    wsService.connect(tokenInfo.accessToken);
+  }
+});
+
+onUnmounted(() => {
+  // 不调用 wsService.disconnect()：多 tab 共用 leader，让 leader 自然管理
 });
 
 const formatDate = (timestamp: string): string => {

@@ -322,7 +322,11 @@ export const bulkAddTag = (data: {
   tag_name: string;
   color?: string;
 }) => {
-  return http.request<{ success: boolean; data: { added: number; total: number; message: string } }>(
+  return http.request<{
+    success: boolean;
+    message?: string;
+    data: { added: number; total: number; message: string };
+  }>(
     "post",
     "/api/media/bulk-tag",
     { data }
@@ -331,7 +335,11 @@ export const bulkAddTag = (data: {
 
 // 15. 批量软删除（与单条 Delete 一致：仅软标记，可恢复）
 export const bulkDelete = (ids: number[]) => {
-  return http.request<{ success: boolean; data: { deleted: number; total: number; message: string } }>(
+  return http.request<{
+    success: boolean;
+    message?: string;
+    data: { deleted: number; total: number; message: string };
+  }>(
     "post",
     "/api/media/bulk-delete",
     { data: { ids } }
@@ -343,7 +351,11 @@ export const bulkSetCustomer = (data: {
   ids: number[];
   customer_id: number;
 }) => {
-  return http.request<{ success: boolean; data: { updated: number; total: number; message: string } }>(
+  return http.request<{
+    success: boolean;
+    message?: string;
+    data: { updated: number; total: number; message: string };
+  }>(
     "post",
     "/api/media/bulk-customer",
     { data }

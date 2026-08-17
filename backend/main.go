@@ -85,6 +85,11 @@ func main() {
 	// 媒体库：照片 / 录像 / 音频文件存储（v2 单表 + 3 哈希）
 	services.InitMediaStorage(cfg.Upload.Dir)
 
+	// WebSocket 实时推送（铃铛通知 / 新消息实时推送）
+	wsHandler := handlers.NewWebSocketHandler([]byte(cfg.JWT.Secret))
+	go wsHandler.Run()
+	handlers.SetWebSocketHandlerForMessage(wsHandler)
+
 	if err := services.InitBackupService(&cfg.Backup); err != nil {
 		utils.Warn("备份服务初始化失败: %v", err)
 	}
@@ -109,10 +114,12 @@ func main() {
 		utils.Fatal("JWT配置初始化失败: %v", err)
 	}
 
-	combinedServer := server.NewCombinedServer(cfg, jwtUtils)
+	combinedServer := server.NewCombinedServer(cfg, jwtUtils, wsHandler)
 
 	handlers.SetGracefulShutdownFunc(func() {
 		utils.Info("服务器关闭中...")
+		// WS hub 关闭由 combinedServer.Shutdown() 统一触发（避免重复关停）。
+		// 关停顺序：HTTP server 停接新请求 → WS hub 关闭所有连接 → DB 关闭。
 		combinedServer.Shutdown()
 		database.CloseDatabase()
 	})

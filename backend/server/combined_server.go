@@ -19,12 +19,13 @@ import (
 
 type CombinedServer struct {
 	httpServer *http.Server
+	wsHandler  *handlers.WebSocketHandler
 	enableSSL  bool
 	certFile   string
 	keyFile    string
 }
 
-func NewCombinedServer(cfg *config.Config, jwtUtils interface{}) *CombinedServer {
+func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *handlers.WebSocketHandler) *CombinedServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -34,6 +35,7 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}) *CombinedServer
 	router.Use(middleware.Maintenance())
 
 	registerAPIRoutes(router, jwtUtils, cfg)
+	registerWebSocketRoutes(router, jwtUtils, wsHandler)
 	registerWebRoutes(router, cfg)
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
@@ -48,6 +50,7 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}) *CombinedServer
 
 	return &CombinedServer{
 		httpServer: httpServer,
+		wsHandler:  wsHandler,
 		enableSSL:  cfg.Server.EnableSSL,
 		certFile:   cfg.Server.SSLCert,
 		keyFile:    cfg.Server.SSLKey,
@@ -224,6 +227,19 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.GET("/media/check-hash", mediaHandler.CheckHash)
 				protected.GET("/media/:id/verify", mediaHandler.Verify)
 			}
+		}
+	}
+}
+
+func registerWebSocketRoutes(router *gin.Engine, jwtUtils interface{}, wsHandler *handlers.WebSocketHandler) {
+	api := router.Group("/api")
+	{
+		api.GET("/ws", wsHandler.HandleWebSocket)
+
+		if jwt, ok := jwtUtils.(*utils.JWTUtils); ok {
+			api.GET("/ws/status", middleware.JWTAuth(jwt), func(c *gin.Context) {
+				utils.Success(c, gin.H{"client_count": wsHandler.GetClientCount()})
+			})
 		}
 	}
 }
@@ -409,8 +425,14 @@ func (s *CombinedServer) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// 关停顺序：HTTP server 先停接新请求 → WS hub 后关闭连接。
+	// 反过来的话，HTTP 关停期间还能收请求但 WS 已关闭，会出现"调用成功但收不到推送"的错觉。
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		utils.LogError("API服务器关闭超时: %v", err)
+	}
+
+	if s.wsHandler != nil {
+		s.wsHandler.Shutdown()
 	}
 }
 

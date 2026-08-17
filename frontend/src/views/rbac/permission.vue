@@ -410,6 +410,9 @@ async function handleSavePermission() {
   }
 }
 
+// handleSubmit 是模板里的回调名（@click="handleSubmit"）
+const handleSubmit = handleSavePermission;
+
 async function handleToggleStatus(row: Permission) {
   const newStatus = row.status === "active" ? "disabled" : "active";
   try {

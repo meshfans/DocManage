@@ -34,12 +34,12 @@ export default class PureHttp {
     param?: AxiosRequestConfig,
     axiosConfig?: PureHttpRequestConfig
   ): Promise<T>;
-  post<T, P>(
+  post<T = any, P = any>(
     url: string,
     params?: P,
     config?: PureHttpRequestConfig
   ): Promise<T>;
-  get<T, P>(
+  get<T = any, P = any>(
     url: string,
     params?: P,
     config?: PureHttpRequestConfig

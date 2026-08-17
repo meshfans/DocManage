@@ -121,7 +121,9 @@ export function setToken(data: DataInfo<Date>) {
       username,
       nickname,
       roles,
-      permissions
+      permissions,
+      permissionVersion:
+        storageLocal().getItem<DataInfo<number>>(userKey)?.permissionVersion
     });
   }
 }

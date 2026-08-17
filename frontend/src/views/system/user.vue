@@ -375,15 +375,8 @@ const handleCurrentChange = (val: number) => {
 };
 
 const loadDepartments = async () => {
-  try {
-    const res = await getDepartmentTree();
-    if (res.success) {
-      departmentTree.value = res.data as DepartmentTree[];
-    }
-  } catch (error) {
-    const msg = (error as any)?.response?.data?.message || (error as any)?.message || "获取部门列表失败";
-    ElMessage.error(msg);
-  }
+  // 已迁移到 useDepartmentTree().loadDepartmentTree
+  await loadDepartmentTree();
 };
 
 const handleCreate = () => {

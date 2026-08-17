@@ -28,7 +28,9 @@ func NewCustomerHandler(cfg *config.Config) *CustomerHandler {
 }
 
 func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
-	if !RequireAdmin(c) {
+	// 2026-07-07 round11：与 manager 角色 seed 保持一致——manager 已持有
+	// customer:create 权限码；改用 RequirePermission 让 manager 可写客户。
+	if !RequirePermission(c, "customer:create") {
 		return
 	}
 
@@ -136,8 +138,8 @@ func (h *CustomerHandler) GetCustomerByID(c *gin.Context) {
 	// 2026-06-28 修复 Issue #4：与 GetCustomerList 对齐，允许非 admin 持有 customer:list
 	// 权限码的用户按 data_scope 访问单条详情。
 	// 原 RequireAdmin 会导致「列表可见、点开 403」的 UX 问题。
-	// CreateCustomer / UpdateCustomer / DeleteCustomer 保持 RequireAdmin（这些是写操作，
-	// 属于产品策略决策，不在本次修复范围；详见 handover §2.2 P0 待办）。
+	// 2026-07-07 round11：Create/Update/Delete 同步改为 RequirePermission("customer:create"/"customer:update"/"customer:delete")，
+	// 与 manager 角色 seed 中的权限码一致。
 	if !IsAdminUser(c) && !HasPermission(c, "customer:list") {
 		utils.Error(c, http.StatusForbidden, "需要管理员或 customer:list 权限")
 		return
@@ -179,7 +181,8 @@ func customerDataScopeAllows(c *gin.Context, ownerID, departmentID int64) bool {
 }
 
 func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
-	if !RequireAdmin(c) {
+	// 2026-07-07 round11：与 CreateCustomer 对齐，manager 持有 customer:update 即可写。
+	if !RequirePermission(c, "customer:update") {
 		return
 	}
 
@@ -217,7 +220,8 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 }
 
 func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
-	if !RequireAdmin(c) {
+	// 2026-07-07 round11：与 Create/Update 对齐，manager 持有 customer:delete 即可删。
+	if !RequirePermission(c, "customer:delete") {
 		return
 	}
 

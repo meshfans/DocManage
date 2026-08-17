@@ -44,6 +44,14 @@ export function useDepartmentTree() {
     return prefix + connector + ' ' + dept.name;
   };
 
+  /** 兼容旧调用：`getDepartmentLabel(dept, isLast)` —— 忽略 isLast */
+  function getDepartmentLabelCompat(
+    dept: FlatDepartment,
+    _isLast?: boolean
+  ): string {
+    return getDepartmentLabel(dept);
+  }
+
   const loadDepartmentTree = async (fields?: string, forceRefresh: boolean = false) => {
     const now = Date.now();
 
@@ -55,12 +63,12 @@ export function useDepartmentTree() {
     loading.value = true;
     try {
       const res = await getDepartmentTree(fields);
-      if (res.success) {
-        departmentTree.value = res.data as DepartmentTree[];
-        if (!fields) {
-          cachedTree = res.data as DepartmentTree[];
-          cacheTimestamp = now;
-        }
+      // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
+      const tree = Array.isArray(res.list) ? res.list : [];
+      departmentTree.value = tree;
+      if (!fields) {
+        cachedTree = tree;
+        cacheTimestamp = now;
       }
     } catch (error) {
       console.error('获取部门列表失败', error);
@@ -78,7 +86,7 @@ export function useDepartmentTree() {
     departmentTree,
     flatDepartments,
     loading,
-    getDepartmentLabel,
+    getDepartmentLabel: getDepartmentLabelCompat,
     loadDepartmentTree,
     invalidateCache
   };

@@ -35,9 +35,14 @@ export default ({ mode }: ConfigEnv): UserConfigExport => {
       // 留空则不启用（生产模式不需要 dev proxy）
       proxy: VITE_PROXY_TARGET
         ? {
-            // 2026-07-06 round4：移除 /api/ws、/ws 两条 WS 代理条目（WS 模块下线）
             "/api": {
               target: VITE_PROXY_TARGET,
+              changeOrigin: true
+            },
+            // WebSocket 透传：Vite 默认只代理 HTTP，需显式声明 ws: true + http→ws 协议替换
+            "/api/ws": {
+              target: VITE_PROXY_TARGET.replace(/^http/, "ws"),
+              ws: true,
               changeOrigin: true
             }
           }

@@ -66,7 +66,7 @@
         </el-table-column>
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
-            <el-tag size="small" :type="taskTypeMap[row.task_type] || ''">
+            <el-tag size="small" :type="(taskTypeMap[row.task_type] as any) || ('info' as const)">
               {{ row.task_type === "built_in" ? "内置" : "业务" }}
             </el-tag>
           </template>

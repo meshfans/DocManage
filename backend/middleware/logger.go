@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,21 +12,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const tokenParam = "token"
+
 func RequestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		startTime := time.Now()
-		
+
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
-		
+
 		method := c.Request.Method
 		clientIP := c.ClientIP()
 		userAgent := c.Request.UserAgent()
-		
-		if query != "" {
-			path = path + "?" + query
+
+		// 安全过滤：移除 query 中的 token 参数，避免 JWT 落入访问日志
+		sanitizedQuery := sanitizeQuery(tokenParam, query)
+
+		if sanitizedQuery != "" {
+			path = path + "?" + sanitizedQuery
 		}
-		
+
 		c.Next()
 		
 		endTime := time.Now()
@@ -100,6 +106,22 @@ func sanitizeBody(body []byte) string {
 		return s[:500] + "...(truncated)"
 	}
 	return s
+}
+
+// sanitizeQuery 移除 URL query 中的指定参数，避免敏感值落入访问日志。
+func sanitizeQuery(fieldName, rawQuery string) string {
+	if rawQuery == "" || fieldName == "" {
+		return rawQuery
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return ""
+	}
+	if !values.Has(fieldName) {
+		return rawQuery
+	}
+	values.Set(fieldName, "[MASKED]")
+	return values.Encode()
 }
 
 func maskSensitiveData(data, field string) string {

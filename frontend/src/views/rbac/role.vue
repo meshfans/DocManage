@@ -665,9 +665,9 @@ function onCustomDeptCheck() {
 async function ensureDeptTreeLoaded() {
   if (deptTree.value.length > 0) return;
   try {
-    const res: any = await getDepartmentTree();
-    const data = res.data;
-    deptTree.value = Array.isArray(data) ? data : data?.list || [];
+    const res = await getDepartmentTree();
+    // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
+    deptTree.value = Array.isArray(res.list) ? res.list : [];
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || e?.message || e || "加载部门树失败");
   }

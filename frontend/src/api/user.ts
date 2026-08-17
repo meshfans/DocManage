@@ -2,6 +2,8 @@ import { http } from "@/utils/http";
 
 export type UserResult = {
   success: boolean;
+  /** 业务消息（登录失败时由后端返回） */
+  message?: string;
   data: {
     /** 头像 */
     avatar: string;

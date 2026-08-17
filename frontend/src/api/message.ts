@@ -14,6 +14,13 @@ export interface Message {
   sender_name?: string;
 }
 
+/** 后端 utils.Success 包装：{success, data, message} */
+export interface ApiEnvelope<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+}
+
 export interface GetMessagesResponse {
   messages: Message[];
   total: number;
@@ -31,22 +38,28 @@ export interface CreateMessageRequest {
   type?: string;
 }
 
+/** axios 拦截器已自动 unwrap response.data，Promise<T> 直接对应后端 JSON body */
 export const getMessages = (limit?: number, offset?: number) => {
-  return http.request<GetMessagesResponse>("get", "/api/messages/list", {
-    params: { limit, offset }
-  });
+  return http.request<ApiEnvelope<GetMessagesResponse>>(
+    "get",
+    "/api/messages/list",
+    { params: { limit, offset } }
+  );
 };
 
 export const getUnreadCount = () => {
-  return http.request<GetUnreadCountResponse>("get", "/api/messages/unread-count");
+  return http.request<ApiEnvelope<GetUnreadCountResponse>>(
+    "get",
+    "/api/messages/unread-count"
+  );
 };
 
 export const getMessage = (id: number) => {
-  return http.request<Message>("get", `/api/messages/${id}`);
+  return http.request<ApiEnvelope<Message>>("get", `/api/messages/${id}`);
 };
 
 export const createMessage = (data: CreateMessageRequest) => {
-  return http.post<{ id: number }>("/api/messages/create", data);
+  return http.post<ApiEnvelope<{ id: number }>>("/api/messages/create", data);
 };
 
 export const markAsRead = (id: number) => {
