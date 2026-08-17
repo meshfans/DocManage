@@ -661,14 +661,21 @@ function onCustomDeptCheck() {
   formData.custom_dept_ids = checked.map((n) => n.id).filter((id) => typeof id === "number");
 }
 
-// 监听 dialog 打开：data_scope 切到 custom 时拉部门树
+// 懒加载部门树：data_scope 切到 custom 时才拉部门树，避免每次打开 dialog 都打接口。
+// 缓存命中：deptTree 已非空则直接复用（同一 dialog 内多次切回 custom 不会重复请求）。
 async function ensureDeptTreeLoaded() {
   if (deptTree.value.length > 0) return;
   try {
     const res = await getDepartmentTree();
     // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
+    // res.list 在错误路径上可能为 undefined（如 401 时 403 envelope 没 list 字段），
+    // 用 Array.isArray 兜底，避免把 undefined 灌进 ref 导致 el-tree 渲染崩溃。
     deptTree.value = Array.isArray(res.list) ? res.list : [];
   } catch (e: any) {
+    // 错误格式兼容：
+    //   1) axios 错误对象：e.response.data.message 是后端 envelope.message
+    //   2) 非 axios 异常（如代码抛出的 Error）：取 e.message
+    //   3) 都为空时降级到 fallback 字符串
     ElMessage.error(e?.response?.data?.message || e?.message || e || "加载部门树失败");
   }
 }

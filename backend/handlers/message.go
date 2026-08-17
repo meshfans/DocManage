@@ -33,6 +33,21 @@ type CreateMessageRequest struct {
 	Type     string `json:"type"`
 }
 
+// wsNewMessagePayload WebSocket new_message 推送的载荷结构。
+// 用 struct 而非 gin.H 是为了：
+//  1. 编译期保证字段名拼写正确（gin.H 拼错字段名直到运行时才被发现）
+//  2. 字段标签即 JSON schema，对前端 / 文档生成友好
+//  3. 与前端 lay-notice/index.vue 的 handleWsNewMessage 字段对齐
+type wsNewMessagePayload struct {
+	ID        int64  `json:"id"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	Type      string `json:"type"`
+	SenderID  int64  `json:"sender_id"`
+	UserID    int64  `json:"user_id"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 func (h *MessageHandler) GetMessages(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	
@@ -106,14 +121,14 @@ func (h *MessageHandler) CreateMessage(c *gin.Context) {
 	// WebSocket 实时推送：接收人在线时立即推一条 new_message，前端铃铛即时更新。
 	// 离线则下次拉取 getUnreadCount 兜底，SendToUser 内部已是非阻塞。
 	if wsHandlerForMessage != nil {
-		wsHandlerForMessage.SendToUser(req.UserID, "new_message", gin.H{
-			"id":         id,
-			"title":      req.Title,
-			"content":    req.Content,
-			"type":       msgType,
-			"sender_id":  senderID,
-			"user_id":    req.UserID,
-			"created_at": time.Now().Unix(),
+		wsHandlerForMessage.SendToUser(req.UserID, "new_message", wsNewMessagePayload{
+			ID:        id,
+			Title:     req.Title,
+			Content:   req.Content,
+			Type:      msgType,
+			SenderID:  senderID,
+			UserID:    req.UserID,
+			CreatedAt: time.Now().Unix(),
 		})
 	}
 

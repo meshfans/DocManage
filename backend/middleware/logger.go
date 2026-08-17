@@ -109,13 +109,18 @@ func sanitizeBody(body []byte) string {
 }
 
 // sanitizeQuery 移除 URL query 中的指定参数，避免敏感值落入访问日志。
+//
+// 失败兜底：url.ParseQuery 解析失败（极少见，如 % 编码错乱）时返回 rawQuery 原样，
+// 而不是返回空串——空串会让 path 后无 ?，丢失全部 query 信息反而更危险，
+// 至少保留原始路径便于事后排查。
 func sanitizeQuery(fieldName, rawQuery string) string {
 	if rawQuery == "" || fieldName == "" {
 		return rawQuery
 	}
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		return ""
+		utils.LogError("[logger] sanitizeQuery 解析失败，原样记录: err=%v, rawQuery=%q", err, rawQuery)
+		return rawQuery
 	}
 	if !values.Has(fieldName) {
 		return rawQuery

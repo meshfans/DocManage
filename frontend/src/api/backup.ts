@@ -1,4 +1,5 @@
 import { http } from "@/utils/http";
+import type { ApiEnvelope } from "./_envelope";
 
 // 备份管理（第四阶段 Phase 4.3）前端 API。
 // 对应后端 server/handlers/backup.go。
@@ -65,13 +66,6 @@ export interface ListBackupsParams {
   status?: BackupManifest["status"];
   page?: number;
   page_size?: number;
-}
-
-/** 后端 utils.Success 包装：{success, data, message} */
-export interface ApiEnvelope<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
 }
 
 /** GET /api/backup/list */

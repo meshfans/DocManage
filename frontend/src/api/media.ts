@@ -1,4 +1,5 @@
 import { http } from "@/utils/http";
+import type { ApiEnvelope } from "./_envelope";
 
 // ==================== 媒体（v2 单表 + 3 哈希）====================
 // 12 个端点对应后端 handlers/media.go
@@ -322,11 +323,11 @@ export const bulkAddTag = (data: {
   tag_name: string;
   color?: string;
 }) => {
-  return http.request<{
-    success: boolean;
-    message?: string;
-    data: { added: number; total: number; message: string };
-  }>(
+  // 注意：data.message 是业务提示（如「已为 N 项添加 tag「xxx」」），
+  // 外层 envelope 的 message 是 HTTP 状态消息——两者语义不同，调用方注意区分。
+  return http.request<
+    ApiEnvelope<{ added: number; total: number; message: string }>
+  >(
     "post",
     "/api/media/bulk-tag",
     { data }
@@ -335,11 +336,10 @@ export const bulkAddTag = (data: {
 
 // 15. 批量软删除（与单条 Delete 一致：仅软标记，可恢复）
 export const bulkDelete = (ids: number[]) => {
-  return http.request<{
-    success: boolean;
-    message?: string;
-    data: { deleted: number; total: number; message: string };
-  }>(
+  // 注意：data.message 是业务提示，外层 message 是 HTTP 状态消息，语义不同。
+  return http.request<
+    ApiEnvelope<{ deleted: number; total: number; message: string }>
+  >(
     "post",
     "/api/media/bulk-delete",
     { data: { ids } }
@@ -351,11 +351,10 @@ export const bulkSetCustomer = (data: {
   ids: number[];
   customer_id: number;
 }) => {
-  return http.request<{
-    success: boolean;
-    message?: string;
-    data: { updated: number; total: number; message: string };
-  }>(
+  // 注意：data.message 是业务提示，外层 message 是 HTTP 状态消息，语义不同。
+  return http.request<
+    ApiEnvelope<{ updated: number; total: number; message: string }>
+  >(
     "post",
     "/api/media/bulk-customer",
     { data }

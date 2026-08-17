@@ -1,4 +1,5 @@
 import { http } from "@/utils/http";
+import type { ApiEnvelope } from "./_envelope";
 
 export interface Message {
   id: number;
@@ -12,13 +13,6 @@ export interface Message {
   created_at: string;
   updated_at: string;
   sender_name?: string;
-}
-
-/** 后端 utils.Success 包装：{success, data, message} */
-export interface ApiEnvelope<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
 }
 
 export interface GetMessagesResponse {
