@@ -44,7 +44,8 @@ type Logger struct {
 	dateStr    string
 	currentDay int
 	daysToKeep int
-	mu         sync.Mutex
+	mu         sync.Mutex // 保护 checkAndRotate
+	writeMu    sync.Mutex // 保护 OpenFile + WriteString 整体写日志文件
 }
 
 var (
@@ -183,31 +184,74 @@ func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
 		return
 	}
 
-	if !isDebugEnabled() {
-		if level == LogLevelInfo || level == LogLevelWarn {
-			return
-		}
+	// 非 debug 模式：Info / Warn 静默（既不写文件也不输出控制台）。
+	// 与历史行为保持一致：避免生产环境 Info/Warn 刷屏。
+	if !isDebugEnabled() && (level == LogLevelInfo || level == LogLevelWarn) {
+		return
 	}
 
+	l.writeLine(level, "", format, args...)
+}
+
+// logWithTraceID 带 trace_id 的日志输出（内部方法，供 *T 系列函数调用）。
+// 当 traceID 为空时，行为与 log() 完全一致（仍走 writeLine + 同样的级别控制），
+// 不会出现 caller 错位，因为 writeLine 不再走 log()。
+func (l *Logger) logWithTraceID(traceID string, level LogLevel, format string, args ...interface{}) {
+	if level < l.logLevel {
+		return
+	}
+
+	// 与 log() 一致：非 debug 模式下 Info / Warn 静默。
+	if !isDebugEnabled() && (level == LogLevelInfo || level == LogLevelWarn) {
+		return
+	}
+
+	l.writeLine(level, traceID, format, args...)
+}
+
+// writeLine 统一的日志构造 + 写入入口。traceID 为空时不加 [trace=...] 前缀。
+// 所有日志写入（log / logWithTraceID）都通过此方法，保证：
+//  1. 并发安全：writeMu 包裹 OpenFile + WriteString 整体，避免多 goroutine 行交错
+//  2. caller(2) 一致：无论是否带 traceID，日志里的文件:行号都指向真正的调用方
+//  3. 行为一致：是否刷屏控制、是否输出控制台，都由同一个 level 判断
+func (l *Logger) writeLine(level LogLevel, traceID string, format string, args ...interface{}) {
 	l.checkAndRotate()
 
-	_, file, line, _ := runtime.Caller(2)
+	_, file, line, _ := runtime.Caller(3)
 	fileName := filepath.Base(file)
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
 	message := fmt.Sprintf(format, args...)
 
-	logLine := fmt.Sprintf("[%s] [%s] [%s:%d] %s\n",
-		timestamp,
-		level.String(),
-		fileName,
-		line,
-		message,
-	)
+	var logLine string
+	if traceID != "" {
+		logLine = fmt.Sprintf("[%s] [%s] [trace=%s] [%s:%d] %s\n",
+			timestamp,
+			level.String(),
+			traceID,
+			fileName,
+			line,
+			message,
+		)
+	} else {
+		logLine = fmt.Sprintf("[%s] [%s] [%s:%d] %s\n",
+			timestamp,
+			level.String(),
+			fileName,
+			line,
+			message,
+		)
+	}
 
+	// 控制台输出：Debug / Error / Fatal 总输出；Info / Warn 仅 debug 模式输出
+	// （已在 log() / logWithTraceID() 入口短路了非 debug 的 Info/Warn）
 	if level == LogLevelDebug || level == LogLevelError || level == LogLevelFatal {
 		log.Print(logLine)
 	}
+
+	// 文件写入：writeMu 保护 OpenFile + WriteString 整体原子性
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
 
 	logFile := l.getLogFileName()
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -282,20 +326,41 @@ func (l *Logger) Fatal(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
+// Debug 全局便捷函数：调用默认 logger
 func Debug(format string, args ...interface{}) {
 	GetLogger().Debug(format, args...)
+}
+
+// DebugT 使用 trace_id 输出 Debug 日志（便于链路追踪）。
+func DebugT(traceID, format string, args ...interface{}) {
+	GetLogger().logWithTraceID(traceID, LogLevelDebug, format, args...)
 }
 
 func Info(format string, args ...interface{}) {
 	GetLogger().Info(format, args...)
 }
 
+// InfoT 使用 trace_id 输出 Info 日志（便于链路追踪）。
+func InfoT(traceID, format string, args ...interface{}) {
+	GetLogger().logWithTraceID(traceID, LogLevelInfo, format, args...)
+}
+
 func Warn(format string, args ...interface{}) {
 	GetLogger().Warn(format, args...)
 }
 
+// WarnT 使用 trace_id 输出 Warn 日志。
+func WarnT(traceID, format string, args ...interface{}) {
+	GetLogger().logWithTraceID(traceID, LogLevelWarn, format, args...)
+}
+
 func LogError(format string, args ...interface{}) {
 	GetLogger().Error(format, args...)
+}
+
+// LogErrorT 使用 trace_id 输出 Error 日志。
+func LogErrorT(traceID, format string, args ...interface{}) {
+	GetLogger().logWithTraceID(traceID, LogLevelError, format, args...)
 }
 
 func Fatal(format string, args ...interface{}) {

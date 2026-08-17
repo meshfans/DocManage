@@ -29,6 +29,8 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *hand
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
+	// Trace() 必须在 RequestLogger 之前，否则访问日志读不到 trace_id。
+	router.Use(middleware.Trace())
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.CORS())
 	// 维护模式拦截（最后注册，最高优先级）

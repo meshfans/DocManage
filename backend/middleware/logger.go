@@ -33,26 +33,33 @@ func RequestLogger() gin.HandlerFunc {
 		}
 
 		c.Next()
-		
+
 		endTime := time.Now()
 		latency := endTime.Sub(startTime)
-		
+
 		statusCode := c.Writer.Status()
-		
+
 		var userID interface{}
 		if id, exists := c.Get("user_id"); exists {
 			userID = id
 		} else {
 			userID = "-"
 		}
-		
+
 		var username interface{}
 		if name, exists := c.Get("username"); exists {
 			username = name
 		} else {
 			username = "-"
 		}
-		
+
+		// 取 trace_id（由 Trace() 中间件写入）。为空时显示 "-"，
+		// 不让日志格式错位（保留 36 字符宽度，UUID 短时右对齐，长时无所谓）。
+		traceID := GetTraceID(c)
+		if traceID == "" {
+			traceID = "-"
+		}
+
 		logDetails := fmt.Sprintf(
 			"%s | %3d | %13v | %15s | %-7s | %s | user=%v(%s)",
 			endTime.Format("2006-01-02 15:04:05"),
@@ -64,26 +71,26 @@ func RequestLogger() gin.HandlerFunc {
 			userID,
 			username,
 		)
-		
+
 		if statusCode >= 500 {
-			utils.LogError("%s", logDetails)
+			utils.LogErrorT(traceID, "%s", logDetails)
 		} else if statusCode >= 400 {
-			utils.Warn("%s", logDetails)
+			utils.WarnT(traceID, "%s", logDetails)
 		} else {
-			utils.Info("%s", logDetails)
+			utils.InfoT(traceID, "%s", logDetails)
 		}
-		
+
 		if len(c.Errors) > 0 {
 			for _, e := range c.Errors {
-				utils.LogError("Request error: %s", e.Error())
+				utils.LogErrorT(traceID, "Request error: %s", e.Error())
 			}
 		}
-		
+
 		if statusCode >= 400 {
 			body, _ := io.ReadAll(c.Request.Body)
-			utils.Warn("Request body: %s", sanitizeBody(body))
+			utils.WarnT(traceID, "Request body: %s", sanitizeBody(body))
 		}
-		
+
 		_ = userAgent
 	}
 }
