@@ -9,19 +9,18 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o doc-server main.go
+RUN CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=mod go build -a -installsuffix cgo -o doc-server main.go
 
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates sqlite-libs
+RUN apk --no-cache add ca-certificates sqlite-libs wget
 
-WORKDIR /app
+WORKDIR /app/bin
 
-COPY --from=builder /app/doc-server .
-COPY --from=builder /app/data ./data
+COPY --from=builder /app/doc-server /app/doc-server
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/bin/data /app/bin/uploads /app/bin/logs /app/bin/backups
 
-EXPOSE 8080
+EXPOSE 8090
 
-CMD ["./doc-server"]
+CMD ["/app/doc-server"]

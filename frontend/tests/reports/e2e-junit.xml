@@ -1,0 +1,10 @@
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="8.685346">
+<testsuite name="api\observability.spec.ts" timestamp="2026-08-18T12:39:00.767Z" hostname="api" tests="3" failures="0" skipped="0" time="0.46" errors="0">
+<testcase name="Docker 可观测性端点 › 后端存活和就绪检查符合契约" classname="api\observability.spec.ts" time="0.101">
+</testcase>
+<testcase name="Docker 可观测性端点 › 后端输出 Prometheus 指标" classname="api\observability.spec.ts" time="0.021">
+</testcase>
+<testcase name="Docker 可观测性端点 › Prometheus 已就绪并成功抓取后端" classname="api\observability.spec.ts" time="0.338">
+</testcase>
+</testsuite>
+</testsuites>

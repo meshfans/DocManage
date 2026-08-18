@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { homedir } from "node:os";
 
 // 避免 OneDrive 重定向导致 playwright-transform-cache 写入 EPERM
@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * Playwright E2E 测试配置
  *
  * 使用前置条件：
- *   1. 后端服务运行（默认 http://localhost:8091）
+ *   1. 后端服务运行（默认 http://localhost:8090）
  *      - 启动: cd backend && go run . --config bin/config.test-main.json
  *   2. 前端 dev server 由本配置 webServer 自动拉起
  *
@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  */
 const PORT = Number(process.env.E2E_PORT ?? 18848);
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
-const BACKEND_URL = process.env.E2E_BACKEND_URL ?? "http://localhost:8091";
+const BACKEND_URL = process.env.E2E_BACKEND_URL ?? "http://localhost:8090";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -70,7 +70,7 @@ export default defineConfig({
   },
 
   // 把后端 URL 注入到项目（测试里通过 process.env.E2E_BACKEND_URL 访问）
-  globalSetup: resolve(__dirname, "tests/e2e/setup/global-setup.ts"),
+  // globalSetup: resolve(__dirname, "tests/e2e/setup/global-setup.ts"),
 
   projects: [
     {

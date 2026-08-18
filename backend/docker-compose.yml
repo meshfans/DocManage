@@ -1,14 +1,39 @@
-version: '3.8'
-
 services:
   doc-server:
     build: .
     ports:
-      - "8080:8080"
+      - "8090:8090"
     volumes:
-      - ./data:/app/data
+      - ./bin/config.json:/app/bin/config.json:ro
+      - ./bin/data:/app/bin/data
+      - ./bin/uploads:/app/bin/uploads
+      - ./bin/logs:/app/bin/logs
+      - ./bin/backups:/app/bin/backups
     environment:
-      - SERVER_PORT=8080
-      - JWT_SECRET=doc-jwt-secret-key-2024
-      - DB_PATH=/app/data/doc.db
+      CONFIG_FILE: /app/bin/config.json
+      SERVER_PORT: "8090"
+      DB_PATH: /app/bin/data/doc.db
+      UPLOAD_DIR: /app/bin/uploads
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+      - "127.0.0.1:19090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      doc-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:

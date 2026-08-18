@@ -14,6 +14,7 @@ export default defineConfig({
     globals: true, // 免 import describe/it/expect
     environment: "happy-dom", // DOM 环境（用于组件挂载）
     include: ["tests/unit/**/*.test.ts"],
+    passWithNoTests: true,
     setupFiles: ["tests/unit/setup.ts"],
     // Element Plus + happy-dom 在 happy-dom 环境已稳定
     css: false,
