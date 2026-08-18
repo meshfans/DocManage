@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -45,6 +46,10 @@ type Scheduler struct {
 	location    *time.Location
 	logRetent   int
 	logOutputKB int
+
+	// started/stopped 追踪运行态，供 health probe 查询
+	started atomic.Bool
+	stopped atomic.Bool
 }
 
 var globalScheduler *Scheduler
@@ -83,6 +88,11 @@ func InitScheduler(cfg *config.Config) error {
 		logRetent:   cfg.Scheduler.LogRetention,
 		logOutputKB: cfg.Scheduler.LogOutputMaxKB,
 	}
+	// 注意：故意延后到 loadAllActive 成功后再赋值给 globalScheduler，
+	// 避免部分初始化的 s 被 GetScheduler() 取到后 Stop() 触发 close(nil)/nil deref。
+	// 但 cfg.Scheduler.Enabled=false 时 init 早 return，下面的 registerBuiltinHandlers
+	// 不会被调用；这里用 prevScheduler / restore 模式做"原子提交"。
+	prevScheduler := globalScheduler
 	globalScheduler = s
 
 	// 1. 注册内置 handler
@@ -95,11 +105,18 @@ func InitScheduler(cfg *config.Config) error {
 
 	// 3. 加载所有 active 任务到 cron
 	if err := s.loadAllActive(); err != nil {
+		// 加载失败：started 保持 false，Running() 返回 false；
+		// 回退 globalScheduler 到原值，并把部分构造的 cron 停掉防止泄漏。
+		globalScheduler = prevScheduler
+		if ctx := s.cron.Stop(); ctx != nil {
+			<-ctx.Done()
+		}
 		return fmt.Errorf("加载定时任务失败: %w", err)
 	}
 
 	// 4. 启动 cron
 	s.cron.Start()
+	s.started.Store(true)
 	utils.Info("✅ 定时任务调度器启动成功（时区: %s, 日志保留: %d 条）", loc.String(), s.logRetent)
 
 	// 5. 启动后台清理 goroutine（每天清一次）
@@ -113,11 +130,17 @@ func GetScheduler() *Scheduler {
 	return globalScheduler
 }
 
-// Stop 优雅停机。
+// Stop 优雅停机。幂等：重复调用不会触发 close(stopCh) panic。
 func (s *Scheduler) Stop() {
 	if s == nil || s.cron == nil {
 		return
 	}
+	// 幂等守卫：CompareAndSwap 保证只有第一次调用真正进入停机流程，
+	// 后续重复调用直接返回（健康探针/关闭路径可能都触发 Stop）。
+	if !s.stopped.CompareAndSwap(false, true) {
+		return
+	}
+	// stopCh 只由首次 Stop 关闭；cleanupLoop 的 select 收到信号即退出。
 	close(s.stopCh)
 	utils.Info("调度器停止中，等待正在执行的任务结束...")
 	stopCtx := s.cron.Stop()
@@ -130,6 +153,21 @@ func (s *Scheduler) Stop() {
 	}
 	s.wg.Wait()
 	utils.Info("调度器已完全停止")
+}
+
+// Running 返回 scheduler 是否"已初始化并已启动且尚未 Stop"。
+//
+//   - nil 接收者或未调用 InitScheduler() → false
+//   - cfg.Scheduler.Enabled=false 时 InitScheduler 直接 return，started 不会被置 true → false
+//   - Stop() 调用后 → false
+//   - 启动后到 Stop() 之前 → true
+//
+// 使用 atomic.Bool 读写，并发安全。
+func (s *Scheduler) Running() bool {
+	if s == nil {
+		return false
+	}
+	return s.started.Load() && !s.stopped.Load()
 }
 
 // ==================== Handler 注册 ====================

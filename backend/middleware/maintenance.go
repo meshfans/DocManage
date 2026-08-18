@@ -18,13 +18,16 @@ import (
 //   - cfg.MaintenanceMode == true  → 仅放行白名单，其余返回 503 + Retry-After: 60
 //
 // 白名单（精确前缀匹配）：
-//   - /api/health                          健康检查（liveness probe）
+//   - /health, /healthz, /readyz, /metrics 健康检查（liveness / readiness / metrics 探针）
 //   - /api/system/maintenance              维护模式查询 / 控制自身
 //
 // 注意：登录 / 刷新 token 也被拦截（避免维护中创建新会话）。
 func Maintenance() gin.HandlerFunc {
 	whitelist := []string{
-		"/api/health",
+		"/health",
+		"/healthz",
+		"/readyz",
+		"/metrics",
 		"/api/system/maintenance",
 	}
 

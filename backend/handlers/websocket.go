@@ -87,10 +87,10 @@ type WebSocketMessage struct {
 type wsClient struct {
 	conn       *websocket.Conn
 	userID     int64
-	authToken  string // 用于黑名单校验，登录态失效时立即断开
-	send       chan []byte    // writePump 独占消费
-	closeCode  chan int       // closeWithCode 通知 writePump 发送 CloseMessage
-	closeDone  chan struct{}  // writePump 退出时关闭，供 closeWithCode 等待
+	authToken  string        // 用于黑名单校验，登录态失效时立即断开
+	send       chan []byte   // writePump 独占消费
+	closeCode  chan int      // closeWithCode 通知 writePump 发送 CloseMessage
+	closeDone  chan struct{} // writePump 退出时关闭，供 closeWithCode 等待
 	closeOnce  sync.Once
 	closedFlag atomic.Bool
 }
@@ -100,7 +100,7 @@ type WebSocketHandler struct {
 	sync.RWMutex // 嵌入：所有 clients/userClients/connByPtr 的并发访问统一加锁
 
 	clients     map[*wsClient]struct{}
-	userClients map[int64]*wsClient          // userID -> 最新 conn（单点登录）
+	userClients map[int64]*wsClient           // userID -> 最新 conn（单点登录）
 	connByPtr   map[*websocket.Conn]*wsClient // 反向索引（替代 O(N) 扫描）
 	register    chan *wsClient
 	unregister  chan *wsClient
@@ -556,14 +556,26 @@ func (h *WebSocketHandler) validateToken(tokenString string) int64 {
 	return int64(userID)
 }
 
+// GetClientCount 返回当前已注册的 ws 连接数。
 func (h *WebSocketHandler) GetClientCount() int {
 	return int(h.connCount.Load())
 }
 
+// GetOnlineUserCount 返回当前在线用户数（按 userID 去重）。
 func (h *WebSocketHandler) GetOnlineUserCount() int {
 	h.RLock()
 	defer h.RUnlock()
 	return len(h.userClients)
+}
+
+// IsClosed 返回 hub 是否已调用过 Shutdown() 进入关停状态。
+// nil-safe：nil 接收者视为已关闭（readyz 会据此判定 WS 不可用）。
+// 实现上复用现有 atomic.Bool shutdown 状态，避免引入额外的标志。
+func (h *WebSocketHandler) IsClosed() bool {
+	if h == nil {
+		return true
+	}
+	return h.shutdown.Load()
 }
 
 // Shutdown 安全关停：触发 ctx 取消 → hub 关闭所有连接 → 等 hub 退出。

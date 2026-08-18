@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -154,6 +155,32 @@ func ReloadDatabase() error {
 	}
 	utils.Info("[database] ReloadDatabase: %s", opts.Path)
 	return InitDatabaseWithOptions(*opts)
+}
+
+// QuickCheck 对数据库做轻量完整性校验（Round 15 健康探针使用）。
+//  1. 检查全局 DB 是否已初始化（非 nil）
+//  2. 调用 PingContext(ctx) 验证连接存活
+//  3. 执行 `PRAGMA quick_check`，结果必须严格为 "ok"（其它任何字符串视为损坏）
+//
+// 调用方应传入带超时的 ctx（例如 readyz 用最多 2 秒的 ctx），
+// 避免 IO 挂死导致探针自身超时。
+//
+// 返回非 nil 表示数据库不可用，错误信息描述具体失败原因。
+func QuickCheck(ctx context.Context) error {
+	if DB == nil {
+		return fmt.Errorf("database 未初始化")
+	}
+	if err := DB.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping 失败: %w", err)
+	}
+	var result string
+	if err := DB.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&result); err != nil {
+		return fmt.Errorf("quick_check 执行失败: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("quick_check 返回非 ok: %q", result)
+	}
+	return nil
 }
 
 // HasInitOptions 返回最近一次 Init 是否已保存 options（用于 drill 等场景前置检查）。

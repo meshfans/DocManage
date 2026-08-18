@@ -11,6 +11,7 @@ import (
 	"doc/config"
 	"doc/handlers"
 	"doc/middleware"
+	"doc/services"
 	"doc/utils"
 	"doc/web"
 
@@ -31,10 +32,19 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *hand
 	router.Use(gin.Recovery())
 	// Trace() 必须在 RequestLogger 之前，否则访问日志读不到 trace_id。
 	router.Use(middleware.Trace())
+	// Metrics 中间件插在 Trace 之后、RequestLogger 之前：
+	//   - 在 Trace 之后：可拿到 trace_id（如未来要把 trace_id 写入指标 label）
+	//   - 在 RequestLogger 之前：避免日志中间件 panic 时丢失 metrics 采集
+	router.Use(middleware.Metrics())
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.CORS())
 	// 维护模式拦截（最后注册，最高优先级）
 	router.Use(middleware.Maintenance())
+
+	// 健康探针必须最先注册，保证即便后续路由加载（web.GetFS）失败，
+	// liveness / readiness / metrics 也能被探针访问。
+	sched := services.GetScheduler()
+	registerHealthRoutes(router, wsHandler, sched)
 
 	registerAPIRoutes(router, jwtUtils, cfg)
 	registerWebSocketRoutes(router, jwtUtils, wsHandler)
@@ -246,6 +256,26 @@ func registerWebSocketRoutes(router *gin.Engine, jwtUtils interface{}, wsHandler
 	}
 }
 
+// registerHealthRoutes 注册健康 / 探针路由（Round 15）。
+//
+//   - /health  → HealthzHandler（兼容原探针路径）
+//   - /healthz → HealthzHandler（K8s 约定 liveness）
+//   - /readyz  → ReadyzHandler（K8s 约定 readiness）
+//   - /metrics → MetricsHandler（Prometheus text 0.0.4）
+//
+// 这些路由最早在 NewCombinedServer 注册，因此即便后续 web.GetFS 加载失败、
+// registerAPIRoutes 抛错，运维探针仍然可达。
+func registerHealthRoutes(router *gin.Engine, wsHandler *handlers.WebSocketHandler, sched *services.Scheduler) {
+	router.GET("/health", handlers.HealthzHandler())
+	router.GET("/healthz", handlers.HealthzHandler())
+	router.GET("/readyz", handlers.ReadyzHandler(wsHandler, sched))
+	router.GET("/metrics", handlers.MetricsHandler())
+}
+
+// registerWebRoutes 注册前端静态资源、index.html、platform-config.json 等路由。
+//
+// 健康探针（/health /healthz /readyz /metrics）由 registerHealthRoutes 在调用本函数之前
+// 注册好。这样 web.GetFS 失败时探针仍可用；本函数无需也不能重复注册同名路由。
 func registerWebRoutes(router *gin.Engine, cfg *config.Config) {
 	_, err := web.GetFS()
 	if err != nil {
@@ -256,14 +286,6 @@ func registerWebRoutes(router *gin.Engine, cfg *config.Config) {
 	serverHost := cfg.Server.Host
 	serverPort := cfg.Server.Port
 	enableSSL := cfg.Server.EnableSSL
-
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "healthy",
-			"service": "doc-server",
-			"version": "1.0.0",
-		})
-	})
 
 	router.GET("/", func(c *gin.Context) {
 		content, err := web.ReadFile("index.html")
