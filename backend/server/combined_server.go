@@ -100,6 +100,11 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/hash/verify", handlers.VerifyHash)
 				protected.GET("/hash/algorithms", handlers.GetAlgorithms)
 
+				// 通用审计日志（append-only 哈希链 / SM3）—— admin only
+				auditHandler := handlers.NewAuditHandler()
+				protected.GET("/audit", auditHandler.ListAudit)
+				protected.POST("/audit/reconcile", auditHandler.ReconcileAuditChain)
+
 				departmentHandler := handlers.NewDepartmentHandler()
 				userHandler := handlers.NewUserExtendedHandler()
 

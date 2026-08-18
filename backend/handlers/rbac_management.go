@@ -82,9 +82,18 @@ func (h *RBACManagementHandler) UpsertRole(c *gin.Context) {
 	middleware.InvalidateDataScopeCacheByRole(r.Code)
 	role, _ := database.GetRoleByCode(r.Code)
 	newDataScope := ""
+	roleID := int64(0)
 	if role != nil {
 		newDataScope = role.DataScope
+		roleID = role.ID
 	}
+	// 审计：role upsert（失败仅 warn，不影响业务）。
+	database.RecordAudit(c, database.AuditTargetRBACRole, roleID, "upsert", gin.H{
+		"code":        r.Code,
+		"name":        r.Name,
+		"data_scope":  newDataScope,
+		"permissions": r.Permissions,
+	})
 	utils.Success(c, gin.H{"code": r.Code, "data_scope": newDataScope, "message": "保存成功"})
 }
 
@@ -140,6 +149,13 @@ func (h *RBACManagementHandler) DeleteRole(c *gin.Context) {
 		return
 	}
 	InvalidateAllPermsCache()
+	// 审计：role delete（先按 code 反查删除前的 id，避免 AppendAudit 拒绝 target_id==0）。
+	if oldRole, _ := database.GetRoleByCode(code); oldRole != nil {
+		database.RecordAudit(c, database.AuditTargetRBACRole, oldRole.ID, "delete", gin.H{
+			"code":    code,
+			"deleted": n,
+		})
+	}
 	utils.Success(c, gin.H{"code": code, "deleted": n})
 }
 
@@ -179,6 +195,17 @@ func (h *RBACManagementHandler) UpsertPermission(c *gin.Context) {
 	}
 	InvalidateAllPermsCache()
 	InvalidatePermissionVersionCache()
+	// 审计：permission upsert。
+	var permID int64
+	if rp, _ := database.GetPermissionByCode(p.Code); rp != nil {
+		permID = rp.ID
+	}
+	database.RecordAudit(c, database.AuditTargetRBACPermission, permID, "upsert", gin.H{
+		"code":     p.Code,
+		"name":     p.Name,
+		"api_path": p.APIPath,
+		"method":   p.HTTPMethod,
+	})
 	utils.Success(c, gin.H{"code": p.Code, "message": "保存成功"})
 }
 
@@ -192,12 +219,19 @@ func (h *RBACManagementHandler) DeletePermission(c *gin.Context) {
 		utils.BadRequest(c, "code 不能为空")
 		return
 	}
+	// 审计：删除前取 permission id。
+	oldPerm, _ := database.GetPermissionByCode(code)
 	if err := database.DeletePermission(code); err != nil {
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	InvalidateAllPermsCache()
 	InvalidatePermissionVersionCache()
+	if oldPerm != nil {
+		database.RecordAudit(c, database.AuditTargetRBACPermission, oldPerm.ID, "delete", gin.H{
+			"code": code,
+		})
+	}
 	utils.Success(c, gin.H{"code": code, "message": "已删除"})
 }
 
@@ -358,4 +392,3 @@ func HasPermissionCode(perms []string, code string) bool {
 	}
 	return false
 }
-

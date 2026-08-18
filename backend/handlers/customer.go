@@ -63,6 +63,15 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 	}
 
 	utils.IncBusinessEvent("customer.create")
+	// 审计：customer create（detail 仅记字段名 + 长度，避免存敏感数据）。
+	database.RecordAudit(c, database.AuditTargetCustomer, id, "create", gin.H{
+		"snowid":        snowid,
+		"real_name_len": len(req.RealName),
+		"phone_len":     len(req.Phone),
+		"id_card_len":   len(req.IDCard),
+		"owner_user_id": ownerUserID,
+		"department_id": deptID,
+	})
 	utils.Success(c, gin.H{
 		"id":      id,
 		"snowid":  snowid,
@@ -254,6 +263,8 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 	}
 
 	utils.IncBusinessEvent("customer.delete")
+	// 审计：customer delete。
+	database.RecordAudit(c, database.AuditTargetCustomer, req.ID, "delete", nil)
 	utils.Success(c, gin.H{
 		"message": "删除成功",
 	})
@@ -362,6 +373,12 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	}
 
 	utils.IncBusinessEvent("customer.signature.upload")
+	// 审计：customer signature upload（仅记录文件名 + 字节数，不落二进制）。
+	database.RecordAudit(c, database.AuditTargetCustomer, req.CustomerID, "signature.upload", gin.H{
+		"signature_snowid": snowid,
+		"file_path":        filepath.Base(lastFilePath),
+		"record_id":        recordID,
+	})
 	utils.Success(c, gin.H{
 		"message":          "签名上传成功",
 		"signature_snowid": snowid,

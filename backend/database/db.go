@@ -637,6 +637,40 @@ func createTables() error {
 		keep_until        INTEGER NOT NULL DEFAULT 0        -- 自动清理截止时间：0 = 永不清除（手动备份），>0 = unix 时间戳
 	);
 
+	-- 通用审计表（append-only，司法 L4 合规 / SM3 全局哈希链）
+	-- target_type 字典（按需扩展，权威源在 handlers/audit.go）：
+	--   media / signature / seal / contract / flow / thirdparty / reminder /
+	--   rbac_role / rbac_permission / rbac_user_binding / consent_letter /
+	--   pdf_lock / customer / system / auth / backup / scheduled_task
+	-- action 字典按 target_type 分组，与 DocManage 一致；详见 handlers/audit.go 注释。
+	CREATE TABLE IF NOT EXISTS audit_log (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		target_type  TEXT    NOT NULL,
+		target_id    INTEGER NOT NULL,
+		action       TEXT    NOT NULL,
+		actor_id     INTEGER NOT NULL,
+		actor_ip     TEXT    NOT NULL DEFAULT '',
+		user_agent   TEXT    NOT NULL DEFAULT '',
+		detail       TEXT    NOT NULL DEFAULT '{}',  -- JSON 字符串
+		hash_sm3     TEXT    NOT NULL DEFAULT '',     -- 本行 SM3（链式）
+		prev_hash    TEXT    NOT NULL DEFAULT '',     -- 上一行 hash_sm3
+		created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+
+	-- 触发器：禁止 UPDATE audit_log（append-only）
+	CREATE TRIGGER IF NOT EXISTS trg_audit_log_no_update
+	BEFORE UPDATE ON audit_log
+	BEGIN
+		SELECT RAISE(ABORT, 'audit_log is append-only');
+	END;
+
+	-- 触发器：禁止 DELETE audit_log（append-only）
+	CREATE TRIGGER IF NOT EXISTS trg_audit_log_no_delete
+	BEFORE DELETE ON audit_log
+	BEGIN
+		SELECT RAISE(ABORT, 'audit_log is append-only');
+	END;
+
 	-- RBAC：role 表（角色定义）
 	CREATE TABLE IF NOT EXISTS role (
 	    id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -729,6 +763,12 @@ func createIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_bm_verified    ON backup_manifest(verified_at) WHERE verified_at IS NOT NULL`,
 		// 链式清理索引：仅索引 keep_until > 0 的（手动备份 = 0 不参与）
 		`CREATE INDEX IF NOT EXISTS idx_bm_keep_until  ON backup_manifest(keep_until) WHERE keep_until > 0`,
+
+		// 通用审计表索引（append-only 哈希链审计）
+		`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_target      ON audit_log(target_type, target_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_actor       ON audit_log(actor_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_action      ON audit_log(action, created_at DESC)`,
 
 		// 提醒业务索引
 		`CREATE INDEX IF NOT EXISTS idx_rt_active    ON reminder_template(is_active)`,

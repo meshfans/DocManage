@@ -48,12 +48,22 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, err := database.GetUserByUsername(req.Username)
 	if err != nil {
 		utils.Info("Login failed: user not found - %s\n", req.Username)
+		// 审计：登录失败（用户不存在，actor_user_id=0；target_id=0）。
+		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "login.failed", gin.H{
+			"username": req.Username,
+			"reason":   "user_not_found",
+		})
 		utils.Unauthorized(c, "用户名或密码错误")
 		return
 	}
 
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
 		utils.Info("Login failed: wrong password - %s\n", req.Username)
+		// 审计：登录失败（密码错误；actor 与 target 都是 user.ID）。
+		database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.failed", gin.H{
+			"username": req.Username,
+			"reason":   "wrong_password",
+		})
 		utils.Unauthorized(c, "用户名或密码错误")
 		return
 	}
@@ -63,6 +73,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if user.Status != "active" {
 		utils.LogError("[Auth.Login] 用户已禁用仍尝试登录: username=%s, status=%s, ip=%s",
 			user.Username, user.Status, c.ClientIP())
+		// 审计：登录失败（账号禁用）。
+		database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.failed", gin.H{
+			"username": req.Username,
+			"reason":   "account_disabled",
+			"status":   user.Status,
+		})
 		utils.Unauthorized(c, "账号已被禁用，请联系管理员")
 		return
 	}
@@ -102,6 +118,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	utils.Info("User logged in: %s\n", user.Username)
+	// 审计：登录成功。/login 不走 JWTAuth 中间件，c.Get("user_id") 取不到 → 用 RecordAuditBy 显式传 actor_user_id。
+	database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.success", gin.H{
+		"username": user.Username,
+	})
 	utils.Success(c, response)
 }
 

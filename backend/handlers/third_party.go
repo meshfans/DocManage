@@ -478,6 +478,8 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 		return
 	}
 	utils.IncBusinessEvent("thirdparty.contract.delete")
+	// 审计：thirdparty.contract.delete。
+	database.RecordAudit(c, database.AuditTargetThirdParty, id, "delete", nil)
 	utils.Success(c, gin.H{"message": "已删除"})
 }
 
