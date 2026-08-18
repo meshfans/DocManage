@@ -87,28 +87,42 @@ func NewRestoreService(cfg *config.Config) *RestoreService {
 //  3. 校验所有 zip 文件存在 + 哈希匹配（若有）
 //  4. 干跑 → 返回 actions 列表
 //  5. 实际恢复 → 快照当前数据 → 解压全量 → 顺序应用增量 → 写入恢复审计
-func (s *RestoreService) Run(req RestoreRequest) (*RestoreResult, error) {
-	result := &RestoreResult{DryRun: req.DryRun}
+func (s *RestoreService) Run(req RestoreRequest) (result *RestoreResult, err error) {
+	// Round 16 业务事件埋点：在 Run 出口汇合点按 err 状态上报一次（涵盖 dry-run 路径，
+	// 避免在每个 return 处重复埋点）。
+	defer func() {
+		if err != nil {
+			utils.IncBusinessEvent("backup.restore.failed")
+			return
+		}
+		utils.IncBusinessEvent("backup.restore.success")
+	}()
+	result = &RestoreResult{DryRun: req.DryRun}
 
 	// 1) 查全量 manifest
-	full, err := database.GetBackupManifestByID(req.FullBackupID)
-	if err != nil {
-		return nil, fmt.Errorf("查询全量备份失败: %w", err)
+	full, ferr := database.GetBackupManifestByID(req.FullBackupID)
+	if ferr != nil {
+		err = fmt.Errorf("查询全量备份失败: %w", ferr)
+		return
 	}
 	if full == nil {
-		return nil, fmt.Errorf("找不到全量备份 manifest_id=%d", req.FullBackupID)
+		err = fmt.Errorf("找不到全量备份 manifest_id=%d", req.FullBackupID)
+		return
 	}
 	if full.Type != database.BackupTypeFull {
-		return nil, fmt.Errorf("manifest_id=%d 不是全量备份（type=%s）", req.FullBackupID, full.Type)
+		err = fmt.Errorf("manifest_id=%d 不是全量备份（type=%s）", req.FullBackupID, full.Type)
+		return
 	}
 	if full.Status != database.BackupStatusSuccess && full.Status != database.BackupStatusVerified {
-		return nil, fmt.Errorf("全量备份状态不可用：%s", full.Status)
+		err = fmt.Errorf("全量备份状态不可用：%s", full.Status)
+		return
 	}
 
 	// 2) 收集增量（按时间顺序）
-	incrementals, err := database.GetLatestIncrementalAfter(req.FullBackupID)
-	if err != nil {
-		return nil, fmt.Errorf("查询增量备份失败: %w", err)
+	incrementals, ferr := database.GetLatestIncrementalAfter(req.FullBackupID)
+	if ferr != nil {
+		err = fmt.Errorf("查询增量备份失败: %w", ferr)
+		return
 	}
 	// 过滤出请求中指定的增量 ID
 	if len(req.IncrementalIDs) > 0 {
@@ -128,8 +142,9 @@ func (s *RestoreService) Run(req RestoreRequest) (*RestoreResult, error) {
 	// 3) 校验所有 zip 文件
 	allManifests := append([]*database.BackupManifest{full}, incrementals...)
 	for i, m := range allManifests {
-		if _, err := os.Stat(m.FilePath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("步骤 %d 的 zip 不存在: %s", i+1, m.FilePath)
+		if _, serr := os.Stat(m.FilePath); os.IsNotExist(serr) {
+			err = fmt.Errorf("步骤 %d 的 zip 不存在: %s", i+1, m.FilePath)
+			return
 		}
 		// 可选：校验哈希（Phase 4.2 验证功能就绪后启用）
 		result.Actions = append(result.Actions, RestoreAction{
@@ -144,13 +159,14 @@ func (s *RestoreService) Run(req RestoreRequest) (*RestoreResult, error) {
 
 	if req.DryRun {
 		result.Success = true
-		return result, nil
+		return
 	}
 
 	// 4) 实际恢复：先快照当前数据
-	snapshotDir, err := s.createSnapshot()
-	if err != nil {
-		return nil, fmt.Errorf("创建快照失败（中止恢复）: %w", err)
+	snapshotDir, ferr := s.createSnapshot()
+	if ferr != nil {
+		err = fmt.Errorf("创建快照失败（中止恢复）: %w", ferr)
+		return
 	}
 	result.CurrentSnapshot = snapshotDir
 	utils.Warn("恢复前快照已创建: %s", snapshotDir)
@@ -186,29 +202,31 @@ func (s *RestoreService) Run(req RestoreRequest) (*RestoreResult, error) {
 
 	// 5) 应用全量 + 增量（顺序覆盖，备份 zip 永远是明文）
 	for i, m := range allManifests {
-		if err := s.extractZipContents(m.FilePath); err != nil {
-			result.Error = fmt.Sprintf("步骤 %d 失败: %v", i+1, err)
-			return result, fmt.Errorf("解压 %s 失败: %w", m.FilePath, err)
+		if eerr := s.extractZipContents(m.FilePath); eerr != nil {
+			result.Error = fmt.Sprintf("步骤 %d 失败: %v", i+1, eerr)
+			err = fmt.Errorf("解压 %s 失败: %w", m.FilePath, eerr)
+			return
 		}
 		utils.Info("已应用步骤 %d: %s (manifest_id=%d)", i+1, m.Type, m.ID)
 	}
 
 	// P0 修复（Issue 4-1）：恢复完成后**重开** SQLite 连接。
 	// 用 database.ReloadDatabase 复用上次 Init 的 options（含 license 派生的密码）。
-	if err := database.ReloadDatabase(); err != nil {
-		result.Error = fmt.Sprintf("重开 DB 失败: %v", err)
-		return result, fmt.Errorf("重开 DB 失败: %w", err)
+	if rerr := database.ReloadDatabase(); rerr != nil {
+		result.Error = fmt.Sprintf("重开 DB 失败: %v", rerr)
+		err = fmt.Errorf("重开 DB 失败: %w", rerr)
+		return
 	}
 
 	// 6) 写恢复审计记录（DB 已重开，可写）
-	if err := s.writeRestoreAudit(req, full, incrementals); err != nil {
-		utils.LogError("写恢复审计失败: %v", err)
+	if werr := s.writeRestoreAudit(req, full, incrementals); werr != nil {
+		utils.LogError("写恢复审计失败: %v", werr)
 		// 不中断恢复流程
 	}
 
 	result.Success = true
 	result.RestoredTo = s.dbPath + " (data) + " + s.uploadDir + " (uploads)"
-	return result, nil
+	return
 }
 
 // createSnapshot 在恢复前自动快照当前数据目录到 ./backups/snapshot_<ts>/。

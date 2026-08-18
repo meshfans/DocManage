@@ -276,16 +276,22 @@ func (v *BackupVerifier) VerifyAll() ([]*VerifyResult, error) {
 		switch r.Result {
 		case "ok":
 			okCount++
+			// Round 16 业务事件埋点：备份验证通过。
+			utils.IncBusinessEvent("backup.verify.ok")
 		case "corrupted":
 			corruptedCount++
 			if firstErr == nil {
 				firstErr = errors.New(r.Error)
 			}
+			// Round 16 业务事件埋点：备份验证发现损坏。
+			utils.IncBusinessEvent("backup.verify.corrupted")
 		case "missing":
 			missingCount++
 			if firstErr == nil {
 				firstErr = errors.New(r.Error)
 			}
+			// Round 16 业务事件埋点：备份验证发现文件丢失。
+			utils.IncBusinessEvent("backup.verify.missing")
 		}
 	}
 

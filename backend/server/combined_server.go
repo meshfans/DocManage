@@ -269,7 +269,9 @@ func registerHealthRoutes(router *gin.Engine, wsHandler *handlers.WebSocketHandl
 	router.GET("/health", handlers.HealthzHandler())
 	router.GET("/healthz", handlers.HealthzHandler())
 	router.GET("/readyz", handlers.ReadyzHandler(wsHandler, sched))
-	router.GET("/metrics", handlers.MetricsHandler())
+	// Round 16：/metrics 改为依赖版工厂，启动时把 wsHub / sched 注入，
+	// 每次请求前一次性刷新 runtime / DB / WS / Scheduler 四类指标。
+	router.GET("/metrics", handlers.MetricsHandlerWithDependencies(wsHandler, sched))
 }
 
 // registerWebRoutes 注册前端静态资源、index.html、platform-config.json 等路由。

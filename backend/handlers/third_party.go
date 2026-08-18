@@ -297,6 +297,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	}
 	// 返回详情（含联表）
 	created, _ := database.GetThirdPartyContractByID(id)
+	utils.IncBusinessEvent("thirdparty.contract.create")
 	utils.Success(c, gin.H{"id": id, "data": created})
 }
 
@@ -390,6 +391,7 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 		return
 	}
 	updated, _ := database.GetThirdPartyContractByID(id)
+	utils.IncBusinessEvent("thirdparty.contract.update")
 	utils.Success(c, gin.H{"data": updated})
 }
 
@@ -436,6 +438,7 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新状态失败: "+err.Error())
 		return
 	}
+	utils.IncBusinessEvent("thirdparty.contract.status.change")
 	utils.Success(c, gin.H{"message": "状态已更新", "status": req.Status})
 }
 
@@ -474,6 +477,7 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
 		return
 	}
+	utils.IncBusinessEvent("thirdparty.contract.delete")
 	utils.Success(c, gin.H{"message": "已删除"})
 }
 

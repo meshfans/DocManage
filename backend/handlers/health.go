@@ -142,9 +142,61 @@ func ReadyzHandler(wsHub *WebSocketHandler, sched *services.Scheduler) gin.Handl
 // 工厂风格：返回 gin.HandlerFunc；handler 内部刷新 runtime 指标、设置
 // Prometheus Content-Type、调用 utils.DefaultRegistry().WriteTo(c.Writer)
 // 并记录错误。
+//
+// 注意：本工厂不感知 wsHub / sched / DB。仅在 metrics 与进程完全解耦时使用；
+// 生产推荐 MetricsHandlerWithDependencies（在 /metrics 路由注册）。
 func MetricsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		utils.RefreshRuntimeMetrics()
+		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		if err := utils.DefaultRegistry().WriteTo(c.Writer); err != nil {
+			utils.LogError("metrics 输出失败: %v", err)
+		}
+	}
+}
+
+// MetricsHandlerWithDependencies 工厂（Round 16）：接受 WebSocket hub / Scheduler 依赖，
+// 在 /metrics 输出前一次性刷新：
+//
+//  1. runtime 指标（goroutines / memstats / gc）
+//  2. 数据库连接池指标（db_open_connections / db_*_closed_total / ...）
+//  3. WebSocket 指标（ws_clients_connected / ws_online_users / ws_messages_*）
+//  4. Scheduler 指标（scheduler_running / scheduler_entries / scheduler_running_tasks）
+//
+// nil-safe：
+//   - wsHub = nil → wsClients=0, wsOnline=0（视为未连接）
+//   - sched  = nil → running=false, entries=0, runningTasks=0
+//   - DB nil 由 utils.RefreshDatabaseMetrics 内部处理（gauge 设为 0，counter 不动）
+//
+// 注意：
+//   - /readyz 不调用本 handler，避免探针 IO 变成双份检查
+//   - metrics 输出本身依赖 defaultRegistry 全局；多次构造 handler 不会重复注册
+func MetricsHandlerWithDependencies(wsHub *WebSocketHandler, sched *services.Scheduler) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 1. runtime
+		utils.RefreshRuntimeMetrics()
+
+		// 2. 数据库
+		utils.RefreshDatabaseMetrics(database.DB)
+
+		// 3. WebSocket
+		clients, onlineUsers := 0, 0
+		if wsHub != nil {
+			clients = wsHub.GetClientCount()
+			onlineUsers = wsHub.GetOnlineUserCount()
+		}
+		utils.SetWebSocketMetrics(clients, onlineUsers)
+
+		// 4. Scheduler
+		running := false
+		entries, runningTasks := 0, 0
+		if sched != nil {
+			running = sched.Running()
+			entries = sched.ListEntriesLen()
+			runningTasks = sched.RunningTaskCount()
+		}
+		utils.RefreshSchedulerMetrics(running, entries, runningTasks)
+
 		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		if err := utils.DefaultRegistry().WriteTo(c.Writer); err != nil {
 			utils.LogError("metrics 输出失败: %v", err)

@@ -188,6 +188,21 @@ func HasInitOptions() bool {
 	return lastInitOptions.Load() != nil
 }
 
+// DBStats 返回当前数据库连接池的 sql.DBStats 快照（Round 16 指标刷新用）。
+//
+//   - DB 为 nil（未初始化 / 已关闭） → 返回 sql.DBStats{} 零值
+//   - DB 非 nil → 调用 DB.Stats() 返回 driver 提供的实时统计
+//
+// 只读 API，不会触发任何数据库 IO；调用方应负责复用结果（避免每次 /metrics 都 Stats 一遍）。
+//
+// 故意走 database 包而不是 utils 包，保证 database 不依赖 utils metrics（依赖方向单向）。
+func DBStats() sql.DBStats {
+	if DB == nil {
+		return sql.DBStats{}
+	}
+	return DB.Stats()
+}
+
 // LastInitOptions 返回最近一次 Init 时保存的 options 值快照（值传递，不可改全局）。
 // 调用方应在 HasInitOptions() == true 时再调用。未初始化时返回零值。
 func LastInitOptions() DatabaseInitOptions {

@@ -31,6 +31,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		} else {
 			c.Set("__ratelimit_result", "failure")
 		}
+		// Round 16 业务事件埋点：登录成功/失败（低风险稳定事件，按 HTTP 状态分流）。
+		if c.Writer.Status() == http.StatusOK {
+			utils.IncBusinessEvent("auth.login.success")
+		} else {
+			utils.IncBusinessEvent("auth.login.failed")
+		}
 	}()
 
 	var req models.LoginRequest
@@ -106,6 +112,12 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			c.Set("__ratelimit_result", "success")
 		} else {
 			c.Set("__ratelimit_result", "failure")
+		}
+		// Round 16 业务事件埋点：refresh 成功/失败（按 HTTP 状态分流，覆盖所有 return 路径）。
+		if c.Writer.Status() == http.StatusOK {
+			utils.IncBusinessEvent("auth.refresh.success")
+		} else {
+			utils.IncBusinessEvent("auth.refresh.failed")
 		}
 	}()
 
@@ -235,6 +247,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 			c.Set("__ratelimit_result", "success")
 		} else {
 			c.Set("__ratelimit_result", "failure")
+		}
+		// Round 16 业务事件埋点：修改密码成功/失败（按 HTTP 状态分流，覆盖所有 return 路径）。
+		if c.Writer.Status() == http.StatusOK {
+			utils.IncBusinessEvent("auth.password.change.success")
+		} else {
+			utils.IncBusinessEvent("auth.password.change.failed")
 		}
 	}()
 

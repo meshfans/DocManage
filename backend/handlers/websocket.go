@@ -161,14 +161,15 @@ func (h *WebSocketHandler) Run() {
 
 func (h *WebSocketHandler) handleRegister(c *wsClient) {
 	h.Lock()
-	defer h.Unlock()
 	if h.shutdown.Load() {
+		h.Unlock()
 		c.closeWithCode(websocket.CloseGoingAway, "server shutting down")
 		return
 	}
 	// 全局连接数超限，拒绝新连接
 	if h.connCount.Load() >= WebSocketMaxConnections {
 		utils.Warn("[WS] 连接数超限 %d/%d，拒绝新连接", h.connCount.Load(), WebSocketMaxConnections)
+		h.Unlock()
 		c.closeWithCode(websocket.CloseTryAgainLater, "server busy")
 		return
 	}
@@ -179,6 +180,9 @@ func (h *WebSocketHandler) handleRegister(c *wsClient) {
 			old.closeWithCode(websocket.ClosePolicyViolation, "replaced by new login")
 			delete(h.clients, old)
 			delete(h.connByPtr, old.conn)
+			// 旧连接从 hub 索引里移除时同步 -1，避免后续 old 的 readPump 触发
+			// handleUnregister 时再次 -1 导致 connCount 双重扣减。
+			h.connCount.Add(-1)
 		}
 		h.userClients[c.userID] = c
 	}
@@ -186,13 +190,22 @@ func (h *WebSocketHandler) handleRegister(c *wsClient) {
 	h.connByPtr[c.conn] = c
 	h.connCount.Add(1)
 	utils.Debug("WebSocket client connected. UserID: %d, Total clients: %d", c.userID, h.connCount.Load())
+
+	// Round 16：连接数 / 在线用户数刷新到指标。
+	// 不能在持锁时调用 utils.SetWebSocketMetrics（持有 Hub.Lock 期间不能再次获取
+	// Hub.RLock，也不能让其它路径在 setter 内部再去碰 Hub 锁，否则会形成
+	// 锁重入 / 锁顺序倒置 → self-deadlock）。先在锁内取快照，释放后再调 setter。
+	clientsSnap := int(h.connCount.Load())
+	usersSnap := len(h.userClients)
+	h.Unlock()
+	utils.SetWebSocketMetrics(clientsSnap, usersSnap)
 }
 
 func (h *WebSocketHandler) handleUnregister(c *wsClient) {
 	h.Lock()
-	defer h.Unlock()
-
 	if _, ok := h.clients[c]; !ok {
+		h.Unlock()
+		// 幂等返回。被新连接替换 / 重复 unregister 不会重复扣减 connCount。
 		return
 	}
 	delete(h.clients, c)
@@ -203,12 +216,24 @@ func (h *WebSocketHandler) handleUnregister(c *wsClient) {
 		}
 	}
 	h.connCount.Add(-1)
-	c.closeWithCode(websocket.CloseNormalClosure, "")
 	utils.Debug("WebSocket client disconnected. Total clients: %d", h.connCount.Load())
+
+	// 持锁快照 → 释放 → 调 setter（理由同 handleRegister）。
+	clientsSnap := int(h.connCount.Load())
+	usersSnap := len(h.userClients)
+	h.Unlock()
+	c.closeWithCode(websocket.CloseNormalClosure, "")
+	utils.SetWebSocketMetrics(clientsSnap, usersSnap)
 }
 
 // fanoutBroadcast 把广播消息丢到每个 conn 的 send channel，
 // 不在 hub 内做 conn I/O；writePump 各自消费。
+//
+// Round 16：每条消息的发送结果计入 ws_messages_sent_total / ws_messages_failed_total。
+// 这里 sent = "真正成功入队 send channel"；缓冲区满 / conn 已关闭 → failed。
+// 注意："没有任何可写用户"（hub 空）也按 sent 计数（语义：消息已成功提交给 hub，
+// 后续是否被消费由各 conn 的 writePump 决定）。这样不会因为瞬时空 hub 导致
+// sent / failed 计数语义错乱。
 func (h *WebSocketHandler) fanoutBroadcast(message []byte) {
 	h.RLock()
 	defer h.RUnlock()
@@ -216,7 +241,9 @@ func (h *WebSocketHandler) fanoutBroadcast(message []byte) {
 		// 非阻塞写入：send 已满则关闭这个 conn（最简单降级）
 		select {
 		case c.send <- message:
+			utils.IncWebSocketMessage(true)
 		default:
+			utils.IncWebSocketMessage(false)
 			utils.Info("WebSocket send buffer full, closing slow client. UserID: %d", c.userID)
 			go c.closeWithCode(websocket.CloseInternalServerErr, "send buffer overflow")
 		}
@@ -484,29 +511,55 @@ func (h *WebSocketHandler) handleMessage(cli *wsClient, msg WebSocketMessage) {
 }
 
 // SendToUser 向指定用户推送消息。非阻塞：send 满则丢弃（避免阻塞业务）。
+//
+// Round 16 指标埋点（语义明确，避免"既算 sent 又算 failed"）：
+//   - 用户离线              → failed  +1（视为不可达）
+//   - 编码失败              → failed  +1
+//   - send channel 入队成功  → sent    +1
+//   - send channel 满       → failed  +1
+//
+// 调用前已 nil-safe：h 为 nil 时整个函数不执行任何动作（外层不调用即跳过）。
 func (h *WebSocketHandler) SendToUser(userID int64, messageType string, content interface{}) {
+	if h == nil {
+		return
+	}
 	h.RLock()
 	cli, exists := h.userClients[userID]
 	h.RUnlock()
 	if !exists {
 		utils.Info("用户 %d 未连接WebSocket，跳过推送", userID)
+		utils.IncWebSocketMessage(false)
 		return
 	}
 	data, err := h.encode(messageType, content)
 	if err != nil {
+		utils.IncWebSocketMessage(false)
 		return
 	}
 	select {
 	case cli.send <- data:
+		utils.IncWebSocketMessage(true)
 	default:
+		utils.IncWebSocketMessage(false)
 		utils.Info("SendToUser: 用户 %d send 缓冲满，丢弃", userID)
 	}
 }
 
 // SendToAll 全员广播。非阻塞：hub 内部 fanout 处理 send 满的情况。
+//
+// Round 16 指标埋点：
+//   - 编码失败      → failed +1
+//   - 广播队列满    → failed +1
+//   - 成功入队 hub  → 由 fanoutBroadcast 内部按每个 conn 入队结果计数 sent / failed
+//
+// 因此本函数本身只负责"入口层失败"埋点；具体每个 conn 的入队结果在 fanoutBroadcast 计。
 func (h *WebSocketHandler) SendToAll(messageType string, content interface{}) {
+	if h == nil {
+		return
+	}
 	data, err := h.encode(messageType, content)
 	if err != nil {
+		utils.IncWebSocketMessage(false)
 		return
 	}
 	h.enqueueBroadcast(data)
@@ -515,9 +568,12 @@ func (h *WebSocketHandler) SendToAll(messageType string, content interface{}) {
 func (h *WebSocketHandler) enqueueBroadcast(data []byte) {
 	select {
 	case h.broadcast <- data:
+		// 成功入队 hub；sent / failed 由 fanoutBroadcast 内部按 conn 计数
 	case <-h.ctx.Done():
+		utils.IncWebSocketMessage(false)
 	default:
 		// 广播队列满：丢弃（业务侧应改用 SendToUser 定向推送）
+		utils.IncWebSocketMessage(false)
 		utils.Warn("WebSocket broadcast queue full, dropping message")
 	}
 }

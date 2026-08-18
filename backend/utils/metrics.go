@@ -21,6 +21,7 @@ package utils
 //   - 内部访问 histBuckets / samples / sampleOrder 必须加锁，data-race 安全
 
 import (
+	"database/sql"
 	"fmt"
 	"io"
 	"math"
@@ -1027,6 +1028,27 @@ var (
 	// numGCCounter 按 handoff 约定实现为「只增的 counterImpl」，
 	// 每次 RefreshRuntimeMetrics 把当前 NumGC 与已存值比较，只在变大时累加。
 	numGCCounter *counterImpl
+
+	// ====== Round 16 基础设施指标（WebSocket / DB / Scheduler）======
+	// 设计原则：
+	//   - 所有指标零 label，避免 user_id / task_id / contract_id 等高基数爆炸
+	//   - Gauge 由刷新函数（SetXxxMetrics / RefreshXxxMetrics）整体覆盖
+	//   - Counter 单调递增，由 IncXxx 调用方保证不重复计数
+	wsClientsGauge        *gaugeImpl
+	wsOnlineUsersGauge    *gaugeImpl
+	dbOpenConnsGauge      *gaugeImpl
+	dbInUseConnsGauge     *gaugeImpl
+	dbIdleConnsGauge      *gaugeImpl
+	schedulerRunningGauge *gaugeImpl
+	schedulerEntriesGauge *gaugeImpl
+	schedulerRunningTasks *gaugeImpl
+
+	wsMessagesSentCounter    *counterImpl
+	wsMessagesFailedCounter  *counterImpl
+	dbWaitCountCounter       *counterImpl
+	dbMaxIdleClosedCounter   *counterImpl
+	dbMaxIdleTimeClosedCount *counterImpl
+	dbMaxLifetimeClosedCount *counterImpl
 )
 
 // metricsInit 注册默认指标。包级别 init() 调用一次。
@@ -1050,12 +1072,50 @@ func metricsInit() {
 		sysGauge = newGauge()
 		numGCCounter = newCounter()
 
-		defaultRegistry.MustRegisterCollector("process_start_time_seconds", &cGauge{n: "process_start_time_seconds", h: "进程启动时间（unix 秒）", g: startTimeGauge})
+		defaultRegistry.MustRegisterCollector("process_start_time_seconds", &cGauge{n: "process_start_time_seconds", h: "进程启动时间（unix秒）", g: startTimeGauge})
 		defaultRegistry.MustRegisterCollector("go_goroutines", &cGauge{n: "go_goroutines", h: "当前 goroutine 数", g: goroutinesGauge})
 		defaultRegistry.MustRegisterCollector("go_memstats_alloc_bytes", &cGauge{n: "go_memstats_alloc_bytes", h: "当前分配的字节数", g: allocGauge})
 		defaultRegistry.MustRegisterCollector("go_memstats_sys_bytes", &cGauge{n: "go_memstats_sys_bytes", h: "从系统获取的字节数", g: sysGauge})
 		// go_memstats_num_gc 按 handoff 约定为 counter（单调递增）。
 		defaultRegistry.MustRegisterCollector("go_memstats_num_gc", &cCounter{n: "go_memstats_num_gc", h: "GC 累计次数", c: numGCCounter})
+
+		// ====== Round 16：基础设施指标（WebSocket / DB / Scheduler）======
+		// 所有指标零 label，定义见上方注释。
+		wsClientsGauge = newGauge()
+		wsOnlineUsersGauge = newGauge()
+		dbOpenConnsGauge = newGauge()
+		dbInUseConnsGauge = newGauge()
+		dbIdleConnsGauge = newGauge()
+		schedulerRunningGauge = newGauge()
+		schedulerEntriesGauge = newGauge()
+		schedulerRunningTasks = newGauge()
+
+		wsMessagesSentCounter = newCounter()
+		wsMessagesFailedCounter = newCounter()
+		dbWaitCountCounter = newCounter()
+		dbMaxIdleClosedCounter = newCounter()
+		dbMaxIdleTimeClosedCount = newCounter()
+		dbMaxLifetimeClosedCount = newCounter()
+
+		// WebSocket
+		defaultRegistry.MustRegisterCollector("ws_clients_connected", &cGauge{n: "ws_clients_connected", h: "当前已注册的 WebSocket 连接数", g: wsClientsGauge})
+		defaultRegistry.MustRegisterCollector("ws_online_users", &cGauge{n: "ws_online_users", h: "当前在线用户数（按 userID 去重）", g: wsOnlineUsersGauge})
+		defaultRegistry.MustRegisterCollector("ws_messages_sent_total", &cCounter{n: "ws_messages_sent_total", h: "WebSocket 成功入队的消息数", c: wsMessagesSentCounter})
+		defaultRegistry.MustRegisterCollector("ws_messages_failed_total", &cCounter{n: "ws_messages_failed_total", h: "WebSocket 发送失败的消息数（编码失败 / 缓冲区满 / 目标离线）", c: wsMessagesFailedCounter})
+
+		// Database
+		defaultRegistry.MustRegisterCollector("db_open_connections", &cGauge{n: "db_open_connections", h: "当前数据库打开的连接数（含 idle + in-use）", g: dbOpenConnsGauge})
+		defaultRegistry.MustRegisterCollector("db_in_use_connections", &cGauge{n: "db_in_use_connections", h: "当前正在使用的数据库连接数", g: dbInUseConnsGauge})
+		defaultRegistry.MustRegisterCollector("db_idle_connections", &cGauge{n: "db_idle_connections", h: "当前空闲的数据库连接数", g: dbIdleConnsGauge})
+		defaultRegistry.MustRegisterCollector("db_wait_count_total", &cCounter{n: "db_wait_count_total", h: "数据库连接池等待累计次数", c: dbWaitCountCounter})
+		defaultRegistry.MustRegisterCollector("db_max_idle_closed_total", &cCounter{n: "db_max_idle_closed_total", h: "因超过 SetMaxIdleConns 被关闭的连接累计数", c: dbMaxIdleClosedCounter})
+		defaultRegistry.MustRegisterCollector("db_max_idle_time_closed_total", &cCounter{n: "db_max_idle_time_closed_total", h: "因超过 ConnMaxIdleTime 被关闭的连接累计数", c: dbMaxIdleTimeClosedCount})
+		defaultRegistry.MustRegisterCollector("db_max_lifetime_closed_total", &cCounter{n: "db_max_lifetime_closed_total", h: "因超过 ConnMaxLifetime 被关闭的连接累计数", c: dbMaxLifetimeClosedCount})
+
+		// Scheduler
+		defaultRegistry.MustRegisterCollector("scheduler_running", &cGauge{n: "scheduler_running", h: "调度器是否运行（1=运行，0=停止）", g: schedulerRunningGauge})
+		defaultRegistry.MustRegisterCollector("scheduler_entries", &cGauge{n: "scheduler_entries", h: "调度器当前已注册的 cron entry 数", g: schedulerEntriesGauge})
+		defaultRegistry.MustRegisterCollector("scheduler_running_tasks", &cGauge{n: "scheduler_running_tasks", h: "调度器当前正在执行的任务数", g: schedulerRunningTasks})
 	})
 }
 
@@ -1099,6 +1159,143 @@ func RefreshRuntimeMetrics() {
 	if uint64(ms.NumGC) > prev {
 		numGCCounter.add(float64(uint64(ms.NumGC) - prev))
 	}
+}
+
+// ==================== Round 16：基础设施指标公开 API ====================
+
+// SetWebSocketMetrics 把 WebSocket 连接数 / 在线用户数刷新到指标。
+// 由 hub 在注册 / 注销连接完成后调用；本身并发安全（atomic.Uint64 bits）。
+//
+// 设计要点：
+//   - 不使用 user_id / conn_id label（高基数爆炸风险）
+//   - handler 负责 nil-safe：wsHub 为 nil 时调用方不应当进入此函数；
+//     SetWebSocketMetrics 本身只对负数做夹紧防御，不再声称支持 nil 接收者。
+func SetWebSocketMetrics(clients, onlineUsers int) {
+	metricsInit()
+	if clients < 0 {
+		clients = 0
+	}
+	if onlineUsers < 0 {
+		onlineUsers = 0
+	}
+	wsClientsGauge.set(float64(clients))
+	wsOnlineUsersGauge.set(float64(onlineUsers))
+}
+
+// IncWebSocketMessage 上报一次 WebSocket 消息发送结果。
+//
+//   - sent=true  → ws_messages_sent_total +1
+//   - sent=false → ws_messages_failed_total +1
+//
+// 调用方在 SendToUser / SendToAll 中根据"是否真正成功入队 send channel"判断：
+//   - 编码失败       → failed
+//   - 目标离线       → failed（语义：用户不存在视为不可达）
+//   - send buffer 满 → failed
+//   - broadcast 队列满 → failed
+//   - 成功入队       → sent
+func IncWebSocketMessage(sent bool) {
+	metricsInit()
+	if sent {
+		wsMessagesSentCounter.inc()
+	} else {
+		wsMessagesFailedCounter.inc()
+	}
+}
+
+// RefreshDatabaseMetrics 把当前数据库连接池状态刷到指标。
+//
+// nil DB 视为"未初始化"，把全部 gauge 设为 0；counter 不回退（counter 单调递增语义）。
+// 调用方（健康检查 handler）在调用前应确认 DB 已初始化，但允许 nil 注入做安全降级。
+//
+// Counter 增量计算：
+//   - WaitCount:        当前 wait_count - 上次刷新的 wait_count
+//   - MaxIdleClosed:    同上
+//   - MaxIdleTimeClosed:同上
+//   - MaxLifetimeClosed:同上
+//
+// 由于 stdlib database/sql 不提供增量事件，只能用「差值」累加；
+// 重复调用同一 RefreshDatabaseMetrics 时不会重复计数（差值为 0 时不累加）。
+func RefreshDatabaseMetrics(db *sql.DB) {
+	metricsInit()
+	if db == nil {
+		dbOpenConnsGauge.set(0)
+		dbInUseConnsGauge.set(0)
+		dbIdleConnsGauge.set(0)
+		// counter 不回退，保持单调递增语义
+		return
+	}
+	stats := db.Stats()
+	dbOpenConnsGauge.set(float64(stats.OpenConnections))
+	dbInUseConnsGauge.set(float64(stats.InUse))
+	dbIdleConnsGauge.set(float64(stats.Idle))
+
+	// 差值累加（std lib 不暴露事件，只能 diff）
+	applyDBStatDelta(dbWaitCountCounter, stats.WaitCount)
+	applyDBStatDelta(dbMaxIdleClosedCounter, stats.MaxIdleClosed)
+	applyDBStatDelta(dbMaxIdleTimeClosedCount, stats.MaxIdleTimeClosed)
+	applyDBStatDelta(dbMaxLifetimeClosedCount, stats.MaxLifetimeClosed)
+}
+
+// dbStatSnapshot 每种累计计数的最近一次快照，用于 RefreshDatabaseMetrics 计算差值。
+// 仅用于包内 RefreshDatabaseMetrics，外部不应直接读。
+var dbStatSnapshot struct {
+	sync.Mutex
+	waitCount     int64
+	maxIdleClosed int64
+	maxIdleTime   int64
+	maxLifetime   int64
+}
+
+// applyDBStatDelta 把当前累计值与上次快照做差，累加到 counter。
+// 当前值 < 上次值（理论上不会，DB driver 计数器不重置）时按 0 增量处理，避免指标回退。
+func applyDBStatDelta(c *counterImpl, current int64) {
+	dbStatSnapshot.Lock()
+	defer dbStatSnapshot.Unlock()
+
+	var prev *int64
+	switch c {
+	case dbWaitCountCounter:
+		prev = &dbStatSnapshot.waitCount
+	case dbMaxIdleClosedCounter:
+		prev = &dbStatSnapshot.maxIdleClosed
+	case dbMaxIdleTimeClosedCount:
+		prev = &dbStatSnapshot.maxIdleTime
+	case dbMaxLifetimeClosedCount:
+		prev = &dbStatSnapshot.maxLifetime
+	}
+	if prev == nil {
+		return
+	}
+	if current > *prev {
+		c.add(float64(current - *prev))
+	}
+	*prev = current
+}
+
+// RefreshSchedulerMetrics 把调度器当前状态刷到指标。
+//
+//   - running:        由 sched.Running() 返回（started && !stopped）
+//   - entries:        sched.ListEntries() 长度（cron 已注册 entry 数）
+//   - runningTasks:   sched.RunningTaskCount() 返回值（正在执行的非并发任务数）
+//
+// 允许 sched 为 nil：视为 0 全 gauge，counter 不动。
+// ListEntries 在 sched 为 nil 时不可调用，调用方应保证 sched 非 nil；
+// 但为 nil-safe 仍然做防御性判断。
+func RefreshSchedulerMetrics(running bool, entries, runningTasks int) {
+	metricsInit()
+	if running {
+		schedulerRunningGauge.set(1)
+	} else {
+		schedulerRunningGauge.set(0)
+	}
+	if entries < 0 {
+		entries = 0
+	}
+	if runningTasks < 0 {
+		runningTasks = 0
+	}
+	schedulerEntriesGauge.set(float64(entries))
+	schedulerRunningTasks.set(float64(runningTasks))
 }
 
 func init() {

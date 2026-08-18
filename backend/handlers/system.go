@@ -201,7 +201,7 @@ func (h *SystemHandler) GetConfigFile(c *gin.Context) {
 			DatabaseEnabled: cfg.Backup.DatabaseEnabled,
 			UploadEnabled:   cfg.Backup.UploadEnabled,
 		},
-		}
+	}
 
 	utils.Success(c, result)
 }
@@ -274,9 +274,13 @@ func (h *SystemHandler) BackupNow(c *gin.Context) {
 	}
 	manifestID, err := services.PerformBackupNow(true) // isManual=true（用户手动触发）
 	if err != nil {
+		// Round 16 业务事件埋点：手动备份失败（最稳定的服务层错误出口，HTTP 中间件已计 4xx/5xx）。
+		utils.IncBusinessEvent("backup.manual.failed")
 		utils.Error(c, 500, "备份失败: "+err.Error())
 		return
 	}
+	// Round 16 业务事件埋点：手动备份成功（仅在 PerformBackupNow 明确成功后上报）。
+	utils.IncBusinessEvent("backup.manual.success")
 	utils.Success(c, gin.H{
 		"message":     "备份完成",
 		"manifest_id": manifestID,
@@ -325,6 +329,7 @@ func (h *SystemHandler) RestoreFromBackup(c *gin.Context) {
 	svc := services.NewRestoreService(cfg)
 	result, err := svc.Run(req)
 	if err != nil {
+		// 业务事件埋点统一由 RestoreService.Run 在内部完成（按服务层结果计），此处不重复触发。
 		if result != nil {
 			// dry_run 模式失败也返回详情
 			utils.Error(c, 500, "恢复失败: "+err.Error())

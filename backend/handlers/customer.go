@@ -62,6 +62,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		return
 	}
 
+	utils.IncBusinessEvent("customer.create")
 	utils.Success(c, gin.H{
 		"id":      id,
 		"snowid":  snowid,
@@ -214,6 +215,7 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 		return
 	}
 
+	utils.IncBusinessEvent("customer.update")
 	utils.Success(c, gin.H{
 		"message": "更新成功",
 	})
@@ -251,6 +253,7 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 		return
 	}
 
+	utils.IncBusinessEvent("customer.delete")
 	utils.Success(c, gin.H{
 		"message": "删除成功",
 	})
@@ -358,6 +361,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 		_, _ = database.CreateMessage(adminUser.ID, req.CustomerID, "签名上传通知", msg, "signature")
 	}
 
+	utils.IncBusinessEvent("customer.signature.upload")
 	utils.Success(c, gin.H{
 		"message":          "签名上传成功",
 		"signature_snowid": snowid,
@@ -459,6 +463,7 @@ func (h *CustomerHandler) CreateCustomerExt(c *gin.Context) {
 		return
 	}
 
+	utils.IncBusinessEvent("customer.create")
 	utils.Success(c, gin.H{
 		"id":            id,
 		"snowid":        in.SnowID,
@@ -520,6 +525,7 @@ func (h *CustomerHandler) UpdateCustomerExt(c *gin.Context) {
 		return
 	}
 
+	utils.IncBusinessEvent("customer.update")
 	utils.Success(c, gin.H{
 		"id":      req.ID,
 		"message": "更新成功",

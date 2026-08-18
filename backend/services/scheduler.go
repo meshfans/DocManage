@@ -111,6 +111,8 @@ func InitScheduler(cfg *config.Config) error {
 		if ctx := s.cron.Stop(); ctx != nil {
 			<-ctx.Done()
 		}
+		// Round 16：加载失败时也刷新一次指标，避免 scheduler_running 残留为 1
+		utils.RefreshSchedulerMetrics(s.Running(), s.ListEntriesLen(), s.RunningTaskCount())
 		return fmt.Errorf("加载定时任务失败: %w", err)
 	}
 
@@ -121,6 +123,9 @@ func InitScheduler(cfg *config.Config) error {
 
 	// 5. 启动后台清理 goroutine（每天清一次）
 	go s.cleanupLoop()
+
+	// 6. Round 16：启动后立即刷新一次指标（让 /metrics 第一次响应即可见）
+	utils.RefreshSchedulerMetrics(s.Running(), s.ListEntriesLen(), s.RunningTaskCount())
 
 	return nil
 }
@@ -153,6 +158,8 @@ func (s *Scheduler) Stop() {
 	}
 	s.wg.Wait()
 	utils.Info("调度器已完全停止")
+	// Round 16：停机后刷新指标，让 scheduler_* 在停止后可见为 0
+	utils.RefreshSchedulerMetrics(false, s.ListEntriesLen(), s.RunningTaskCount())
 }
 
 // Running 返回 scheduler 是否"已初始化并已启动且尚未 Stop"。
@@ -249,6 +256,9 @@ func (s *Scheduler) AddOrUpdateTask(t *database.ScheduledTask) error {
 	s.entries[taskID] = entryID
 	s.mu.Unlock()
 
+	// Round 16：entry 注册后刷新指标（entries 数变化）
+	utils.RefreshSchedulerMetrics(s.Running(), s.ListEntriesLen(), s.RunningTaskCount())
+
 	// 写 next_run_at（仅更新下次执行时间，不触碰 fail_count）
 	// ⚠️ Bug 修复：原 UpdateScheduledTaskRunResult(..., false) 会被 reload 调用，
 	// 导致 fail_count 持续增长（即使任务未执行）。
@@ -262,10 +272,18 @@ func (s *Scheduler) AddOrUpdateTask(t *database.ScheduledTask) error {
 // RemoveTask 从 cron 移除任务。
 func (s *Scheduler) RemoveTask(taskID int64) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	removed := false
 	if entryID, ok := s.entries[taskID]; ok {
 		s.cron.Remove(entryID)
 		delete(s.entries, taskID)
+		removed = true
+	}
+	s.mu.Unlock()
+	if removed {
+		// Round 16：entry 移除后刷新指标（entries 数变化）
+		// 在锁外调用，避免 RefreshSchedulerMetrics 内部 RunningTaskCount 试图
+		// 拿 s.mu.RLock() 时与本函数的 s.mu.Lock() 形成死锁。
+		utils.RefreshSchedulerMetrics(s.Running(), s.ListEntriesLen(), s.RunningTaskCount())
 	}
 }
 
@@ -288,7 +306,34 @@ func (s *Scheduler) RunNow(taskID int64, operatorID int64) (int64, error) {
 
 // ListEntries 返回当前 cron 的所有 entry（调试用）。
 func (s *Scheduler) ListEntries() []cron.Entry {
+	if s == nil || s.cron == nil {
+		return nil
+	}
 	return s.cron.Entries()
+}
+
+// ListEntriesLen 返回当前 cron 的 entry 数（Round 16 指标刷新用）。
+// 比直接 len(s.ListEntries()) 更省一次切片分配；nil-safe。
+func (s *Scheduler) ListEntriesLen() int {
+	if s == nil || s.cron == nil {
+		return 0
+	}
+	return len(s.cron.Entries())
+}
+
+// RunningTaskCount 返回当前正在执行的任务数（Round 16 指标刷新用）。
+//
+// 并发安全：在 s.mu 下读取 running map 长度。注意：
+//   - 仅 is_concurrent=0 的任务会写入 running map（防重入锁）
+//   - is_concurrent=1 的任务并发执行但不会出现在 running map 中
+//   - 这与设计意图一致：单点任务 = 串行 = 可观测；并发任务不计入
+func (s *Scheduler) RunningTaskCount() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.running)
 }
 
 // ==================== 内部：执行一次任务 ====================
@@ -311,13 +356,24 @@ func (s *Scheduler) executeOnce(taskID int64, taskKey, handlerName string, param
 				OperatorID:  operatorID,
 				Error:       "上次执行尚未结束，已跳过本次触发",
 			})
+			// Round 16 业务事件埋点：防重入跳过的明确结果。
+			utils.IncBusinessEvent("scheduled_task.run.skipped")
 			return
 		}
 		// 标记占用
 		s.running[taskID] = true
 	}
 	s.mu.Unlock()
+	// Round 16：拿到执行权 / 标记 running 后立即刷新一次指标
+	// （skip 路径不刷新——被跳过的任务根本未进入 running map，计数无变化）
+	// 在锁外调用，避免 RunningTaskCount 内部 RLock 与本函数 Lock 死锁。
+	utils.RefreshSchedulerMetrics(s.Running(), s.ListEntriesLen(), s.RunningTaskCount())
 
+	// 先 wg.Add(1) 再注册 defer.Done()：
+	//   - 保证 wg.Add(1) 一定在 defer 注册之前执行，
+	//   - 避免 Stop() 中的 s.wg.Wait() 在 Add 之前返回导致正在执行的任务被漏等。
+	//   - 并发与停止语义不变（defer 仍然在函数返回时调用 Done）。
+	s.wg.Add(1)
 	// defer 释放占用 + 等所有任务结束
 	defer func() {
 		if !canRun {
@@ -325,9 +381,10 @@ func (s *Scheduler) executeOnce(taskID int64, taskKey, handlerName string, param
 			delete(s.running, taskID)
 			s.mu.Unlock()
 		}
+		// Round 16：任务释放 running 后刷新指标（不改变 stop / 日志语义）
+		utils.RefreshSchedulerMetrics(s.Running(), s.ListEntriesLen(), s.RunningTaskCount())
 		s.wg.Done()
 	}()
-	s.wg.Add(1)
 
 	now := time.Now().Unix()
 	startedAtMs := time.Now().UnixMilli()
@@ -407,6 +464,18 @@ func (s *Scheduler) executeOnce(taskID int64, taskKey, handlerName string, param
 
 	success := status == "success"
 	_ = database.UpdateScheduledTaskRunResult(taskID, finishedAt, nextRunAt, status, errMsg, success)
+
+	// Round 16 业务事件埋点：在 status 汇合点上报一次业务事件（不改变 scheduled_task_log 状态）。
+	switch status {
+	case "success":
+		utils.IncBusinessEvent("scheduled_task.run.success")
+	case "failed":
+		utils.IncBusinessEvent("scheduled_task.run.failed")
+	case "timeout":
+		utils.IncBusinessEvent("scheduled_task.run.timeout")
+	case "skipped":
+		utils.IncBusinessEvent("scheduled_task.run.skipped")
+	}
 
 	utils.Info("任务 [%s] 执行完成 status=%s duration=%dms", taskKey, status, finishedAtMs-startedAtMs)
 }
