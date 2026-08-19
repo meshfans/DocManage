@@ -39,6 +39,14 @@ vendor/
 .trae
 AGENTS*
 todo*
+# ==================== Repository-local runtime artifacts ====================
+# AGENTS.md 规定后端运行时数据只能落在 backend/bin/ 子目录。
+# 防止 cd backend && go run main.go 漏传 --config 时把 doc.db 写到仓库根目录。
+/data/
+/backend/data/
+/backend/scripts/metrics_check_*.csv
+/backend/scripts/metrics_check_*.log
+/backend/scripts/smoke_audit_fix.ps1
 # ==================== License ====================
 __pycache__/
 # Debug 凭证（运行时生成，时间窗口过期后作废；不与 license_config.json 一起入库）
