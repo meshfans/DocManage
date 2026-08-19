@@ -1,0 +1,44 @@
+# Exclude everything not strictly required to build the server image.
+# Without this, COPY . . in Dockerfile pulls the full backend context
+# (including backend/bin/config.json with the plaintext JWT secret,
+# local doc-server.exe, dev databases, etc.) into the builder layer,
+# where it remains accessible via `docker history` / `docker save`.
+# (Issue #10)
+
+# Go build/test/cache
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+*.test
+*.out
+
+# Local backend/bin (config.json with secret, dev DB, uploads, logs, certs, backups)
+bin/
+!bin/.gitkeep
+
+# CI / scripts not needed for runtime
+scripts/
+tests/
+*.ps1
+*.sh
+
+# Frontend (lives in ../frontend)
+frontend/
+playwright-report/
+test-results/
+
+# Docs / handover
+.trae/
+doc/
+docs/
+README.md
+
+# Misc
+*.md
+!monitoring/README.md
+*.yml.tmpl
+*.yaml.tmpl
+Dockerfile.dev
+.dockerignore

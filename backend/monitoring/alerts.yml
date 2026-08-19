@@ -1,0 +1,67 @@
+# Prometheus 告警规则（Issue #20：提供最小可用告警集，配合 Prometheus 部署挂载）
+#
+# 挂载方式：在 docker-compose.yml prometheus 服务里加
+#   - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+# 由 prometheus.yml 的 rule_files 字段引用本文件路径。
+# 移除本文件引用或漏掉 rule_files 字段时所有告警静默失效。
+
+groups:
+  - name: doc-server-runtime
+    interval: 30s
+    rules:
+      # 1) 业务事件失败激增（10 分钟内 auth.login.failed > 30）
+      - alert: DocServerAuthFailuresSpike
+        expr: increase(business_events_total{event=~"auth\\..*failed"}[10m]) > 30
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage 认证失败激增（10m > 30 次）"
+          description: "可能存在密码爆破 / token 暴力刷取，请检查 auth.refresh.failed / auth.login.failed 计数。"
+
+      # 2) 数据库连接池等待次数累计（10 分钟 > 50 通常意味着 SQL 卡顿或锁竞争）
+      - alert: DocServerDBWaitsHigh
+        expr: increase(db_wait_count_total[10m]) > 50
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage 数据库连接获取阻塞（10m > 50）"
+          description: "检查慢 SQL / 锁竞争，建议结合 db_in_use_connections / db_idle_connections 判断是否池满。"
+
+      # 3) WS 在线人数异常下降（>50% 跌幅，相对 5 分钟前）
+      # Issue M-10：冷启动前 5 分钟 ws_clients_connected 无 offset 样本，
+      # `unless absent(...)` 跳过无样本时段，避免启动早期误报 stale marker。
+      - alert: DocServerWSClientsDrop
+        expr: |
+          (ws_clients_connected < (ws_clients_connected offset 5m) * 0.5)
+          unless absent(ws_clients_connected offset 5m)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage WebSocket 在线人数 5 分钟内腰斩"
+          description: "可能是前端断网 / 后端 hub 异常，请结合 ws_messages_failed_total 排查。"
+
+      # 4) 调度器停机
+      - alert: DocServerSchedulerDown
+        expr: scheduler_running == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DocManage 调度器未运行"
+          description: "调度器停机 → 备份/清理/通知等定时任务全部失效，请立即检查 scheduler 日志。"
+
+      # 5) HTTP 5xx 错误率 > 1%
+      - alert: DocServerHigh5xxRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage HTTP 5xx 错误率 > 1%"
+          description: "请查看 /metrics 中 http_requests_total 的 status 分布。"
