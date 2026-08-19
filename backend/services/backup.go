@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type BackupService struct {
@@ -94,7 +96,7 @@ func InitBackupService(cfg *config.BackupConfig) error {
 //  3. 成功 → 计算三哈希 + 写 manifest success
 //  4. 失败 → 写 manifest failed
 //  5. 清理过期 zip 文件（仅自动备份）
-func (s *BackupService) performBackup(isManual bool) (manifestID int64, err error) {
+func (s *BackupService) performBackup(isManual bool, operatorActorID int64) (manifestID int64, err error) {
 	// P1 修复（2026-06-14）：入口加互斥锁。
 	//   - 用 TryLock 立即失败模式，避免阻塞：并发触发时第二个直接返回错误
 	//   - 而不是阻塞等锁（备份可能跑 1-5 分钟，UI 等太久不友好）
@@ -104,6 +106,48 @@ func (s *BackupService) performBackup(isManual bool) (manifestID int64, err erro
 	}
 	defer s.performMu.Unlock()
 
+	// Issue #14 + C-3：在出口汇合点上报 backup.{manual,scheduled}.{success,failed} 审计。
+	// Issue C-3：actor 现在由调用方（handler / scheduler）显式传入，避免审计中
+	// actor_id 永久 0 导致无法追溯手动备份的真实操作者。
+	// Issue M-11：manifestID==0 时（snowid 生成失败、manifest 创建失败等）跳过
+	// 审计写入——否则 AppendAudit 会因 targetID==0 报错并被 RecordAuditStandalone
+	// 吞成 warn 噪音，掩盖真实失败根因。
+	//
+	// snowID/fileSize 必须在 defer 之前声明，defer 闭包才能正确捕获。
+	var (
+		snowID  string
+		fileSize int64
+	)
+	defer func() {
+		if manifestID == 0 {
+			// 不写 audit，失败根因已通过 utils.LogError / fmt.Errorf 返回。
+			return
+		}
+		var action string
+		if isManual {
+			if err != nil {
+				action = "manual.failed"
+			} else {
+				action = "manual.success"
+			}
+		} else {
+			if err != nil {
+				action = "scheduled.failed"
+			} else {
+				action = "scheduled.success"
+			}
+		}
+		database.RecordAuditStandalone(operatorActorID, database.AuditTargetBackup, manifestID, action,
+			// Issue M-9：actorIP 与 userAgent 至少填入节点标识，
+			// 让 service 层 audit 在 hash 链中具备可识别性，避免被
+			// 攻击者用空串伪造 hash 通过 verify。
+			"backup_service", "scheduler_or_manual", gin.H{
+				"snowid":     snowID,
+				"size":       fileSize,
+				"is_manual":  isManual,
+			})
+	}()
+
 	if isManual {
 		utils.Info("开始执行手动备份任务...")
 	} else {
@@ -111,7 +155,8 @@ func (s *BackupService) performBackup(isManual bool) (manifestID int64, err erro
 	}
 
 	// 1) 创建 manifest
-	snowID, snowErr := generateBackupSnowID()
+	var snowErr error
+	snowID, snowErr = generateBackupSnowID()
 	if snowErr != nil {
 		utils.LogError("生成 snowid 失败: %v", snowErr)
 		return 0, fmt.Errorf("生成 snowid 失败: %w", snowErr)
@@ -180,7 +225,13 @@ func (s *BackupService) performBackup(isManual bool) (manifestID int64, err erro
 
 	// 5) 算明文 zip 的三哈希 + total_files
 	plainPath := latestZip
-	fileSize, hashSM3, hashSHA256, hashCombined, hashErr := hashFileTriple(plainPath)
+	var (
+		hashSM3      string
+		hashSHA256   string
+		hashCombined string
+		hashErr      error
+	)
+	fileSize, hashSM3, hashSHA256, hashCombined, hashErr = hashFileTriple(plainPath)
 	if hashErr != nil {
 		utils.LogError("计算哈希失败: %v", hashErr)
 		_ = database.UpdateBackupManifestFailed(manifestID, hashErr.Error())
@@ -529,13 +580,19 @@ func GetBackupService() *BackupService {
 }
 
 // PerformBackupNow 同步执行一次全量备份，返回 manifest_id 与 error。
-// isManual=true：用户手动触发，文件名 manual_*.zip，永不清除
-// isManual=false：定时任务调度，文件名 backup_*.zip，参与自动清理
-func PerformBackupNow(isManual bool) (int64, error) {
+//
+// 参数：
+//   - isManual=true：用户手动触发，文件名 manual_*.zip，永不清除
+//   - isManual=false：定时任务调度，文件名 backup_*.zip，参与自动清理
+//   - operatorActorID：触发者 user_id（0 = system/调度器；handler 端必须传真实 admin ID，
+//     避免审计 log 中 actor_id 永久 0）
+//
+// Issue C-3：让 handler 显式传入 actor，service 层审计使用真实操作者。
+func PerformBackupNow(isManual bool, operatorActorID int64) (int64, error) {
 	if backupService == nil {
 		return 0, fmt.Errorf("备份服务未初始化")
 	}
-	return backupService.performBackup(isManual)
+	return backupService.performBackup(isManual, operatorActorID)
 }
 
 // DetectOrphanBackups 扫描所有 success/verified 的备份，若 zip 文件丢失则标记为 missing。

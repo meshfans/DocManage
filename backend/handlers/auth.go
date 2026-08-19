@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -150,12 +152,22 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	claims, err := h.jwtUtils.ValidateToken(req.RefreshToken)
 	if err != nil {
 		utils.Info("Refresh token validation failed: %v\n", err)
+		// Issue #4：refresh 失败也要留痕，便于检测 token 暴力刷取
+		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "refresh.failed", gin.H{
+			"reason": "validate_failed",
+			"err":    err.Error(),
+		})
 		utils.Unauthorized(c)
 		return
 	}
 
 	if claims.TokenType != "refresh" {
 		utils.Info("Invalid token type for refresh")
+		// Issue #4：token type 不符视为 refresh.failed
+		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "refresh.failed", gin.H{
+			"reason":      "wrong_token_type",
+			"token_type":  claims.TokenType,
+		})
 		utils.Unauthorized(c)
 		return
 	}
@@ -184,6 +196,10 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	utils.Info("Token refreshed for user: %s\n", claims.Username)
+	// Issue #4：refresh 是高敏感事件，模型字典已声明 refresh.success/failed。
+	database.RecordAuditBy(c, claims.UserID, database.AuditTargetAuth, claims.UserID, "refresh.success", gin.H{
+		"username": claims.Username,
+	})
 	utils.Success(c, response)
 }
 
@@ -252,6 +268,52 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	utils.Success(c, gin.H{
 		"message": "Logout successful",
 	})
+
+	// Issue #4：logout 是 token 吊销事件，留痕便于追溯凭据撤销。
+	userID := c.GetInt64("user_id")
+	username := c.GetString("username")
+	// Issue M-1：旧版写 token 前 8 字符（JWT header 可还原 alg/typ 元信息），
+	// 改为 sha256 不可逆指纹 + token 长度，避免泄漏签名算法与凭据片段。
+	database.RecordAuditBy(c, userID, database.AuditTargetAuth, userID, "logout.success", gin.H{
+		"username":            username,
+		"revoked_token_kind":  classifyToken(authHeader),
+		"revoked_token_hash":  tokenFingerprint(authHeader),
+	})
+}
+
+// classifyToken 仅返回 token 类型（access / refresh / unknown），不取 prefix。
+// 让审计员能区分吊销事件属于哪个生命周期，但不暴露凭据片段。
+func classifyToken(header string) string {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return "unknown"
+	}
+	// 简化判断：JWT access token 较短，refresh token 一般 250+ 字符。
+	// 当前 DocManageTrail 的 access/refresh token 长度差异显著，此处仅作分类。
+	tok := header[len(prefix):]
+	switch {
+	case len(tok) > 200:
+		return "refresh"
+	case len(tok) > 50:
+		return "access"
+	default:
+		return "unknown"
+	}
+}
+
+// tokenFingerprint 返回 token 的 sha256 前 6 字节（hex 12 字符）作为不可逆指纹。
+// 同一 token 多次吊销能 dedupe，但无法从指纹还原 token 内容。
+func tokenFingerprint(header string) string {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return ""
+	}
+	tok := header[len(prefix):]
+	if tok == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:6])
 }
 
 // ChangePassword 修改当前登录用户的密码。
@@ -273,6 +335,21 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 			utils.IncBusinessEvent("auth.password.change.success")
 		} else {
 			utils.IncBusinessEvent("auth.password.change.failed")
+		}
+		// Issue #4：密码变更是 L4 取证必查项，模型字典已声明
+		// password.change.success / password.change.failed，必须留痕。
+		// 注意：detail 不能包含明文密码 / 哈希。
+		uid := c.GetInt64("user_id")
+		uname := c.GetString("username")
+		if c.Writer.Status() == http.StatusOK {
+			database.RecordAudit(c, database.AuditTargetAuth, uid, "password.change.success", gin.H{
+				"username": uname,
+			})
+		} else {
+			database.RecordAudit(c, database.AuditTargetAuth, uid, "password.change.failed", gin.H{
+				"username": uname,
+				"reason":   "see_response_body",
+			})
 		}
 	}()
 

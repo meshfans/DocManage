@@ -154,7 +154,13 @@ func ReloadDatabase() error {
 		return fmt.Errorf("ReloadDatabase: 未初始化过 DB，无法 reload")
 	}
 	utils.Info("[database] ReloadDatabase: %s", opts.Path)
-	return InitDatabaseWithOptions(*opts)
+	if err := InitDatabaseWithOptions(*opts); err != nil {
+		return err
+	}
+	// 新 DB 句柄 driver 计数器从 0 开始；若不 reset，metrics 的 db_*_total
+	// counter 在 Restore 之后会永久失活（Issue #2）。
+	utils.ResetDBStatSnapshot()
+	return nil
 }
 
 // QuickCheck 对数据库做轻量完整性校验（Round 15 健康探针使用）。

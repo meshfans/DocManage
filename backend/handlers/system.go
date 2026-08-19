@@ -272,15 +272,16 @@ func (h *SystemHandler) BackupNow(c *gin.Context) {
 	if !RequireAdmin(c) {
 		return
 	}
-	manifestID, err := services.PerformBackupNow(true) // isManual=true（用户手动触发）
+	// Issue C-3：把当前 admin 的 user_id 透传给 service 层，
+	// 让 audit_log 中 actor_id 记录真实操作者（不再永久为 0）。
+	// Issue C-4：handler 层不再重复 IncBusinessEvent；service 层 defer 已在
+	// 出口汇合点统一埋点，避免计数翻倍。
+	operatorID := c.GetInt64("user_id")
+	manifestID, err := services.PerformBackupNow(true, operatorID) // isManual=true
 	if err != nil {
-		// Round 16 业务事件埋点：手动备份失败（最稳定的服务层错误出口，HTTP 中间件已计 4xx/5xx）。
-		utils.IncBusinessEvent("backup.manual.failed")
 		utils.Error(c, 500, "备份失败: "+err.Error())
 		return
 	}
-	// Round 16 业务事件埋点：手动备份成功（仅在 PerformBackupNow 明确成功后上报）。
-	utils.IncBusinessEvent("backup.manual.success")
 	utils.Success(c, gin.H{
 		"message":     "备份完成",
 		"manifest_id": manifestID,
@@ -326,10 +327,14 @@ func (h *SystemHandler) RestoreFromBackup(c *gin.Context) {
 	}
 
 	cfg := config.GlobalConfig
+	// Issue C-3：把当前 admin 的 user_id 透传给 service 层，让 audit_log 中
+	// actor 字段记录真实操作者（不再永久为 0）。
+	// Issue C-4：handler 层不再写 audit 与 IncBusinessEvent，service 层
+	// defer 已统一埋点。
+	operatorID := c.GetInt64("user_id")
 	svc := services.NewRestoreService(cfg)
-	result, err := svc.Run(req)
+	result, err := svc.Run(req, operatorID)
 	if err != nil {
-		// 业务事件埋点统一由 RestoreService.Run 在内部完成（按服务层结果计），此处不重复触发。
 		if result != nil {
 			// dry_run 模式失败也返回详情
 			utils.Error(c, 500, "恢复失败: "+err.Error())

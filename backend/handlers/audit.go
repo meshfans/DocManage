@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"doc/database"
 	"doc/utils"
@@ -86,7 +88,10 @@ func (h *AuditHandler) ListAudit(c *gin.Context) {
 //
 // 响应：
 //   - 200 { success: true, data: { ok: true } } 整链完整
-//   - 200 { success: true, data: { ok: false, broken_at: 123, error: "..." } } 链断在某行
+//   - 500 { success: false, error: "<err>", message: "审计链验证失败..." } 链断裂
+//     （必须返回 5xx 让 Prometheus / 通用告警能识别；body 走 utils.ErrorWithDetail
+//     标准格式，broken_at 通过响应 Header X-Audit-Broken-At 透传，前端可读 header
+//     定位断点，且不破坏 body 格式）
 //   - 403 { success: false, message: "无权限" } 非管理员
 func (h *AuditHandler) ReconcileAuditChain(c *gin.Context) {
 	if !RequireAdmin(c) {
@@ -94,11 +99,11 @@ func (h *AuditHandler) ReconcileAuditChain(c *gin.Context) {
 	}
 	brokenAt, err := database.VerifyAuditChain()
 	if err != nil {
-		utils.Success(c, gin.H{
-			"ok":        false,
-			"broken_at": brokenAt,
-			"error":     err.Error(),
-		})
+		// Issue M-3：走 utils.ErrorWithDetail 标准响应格式（顶层 success/message/error），
+		// 不再嵌套 data 字段；broken_at 通过 HTTP 响应 Header X-Audit-Broken-At 透传。
+		msg := fmt.Sprintf("审计链验证失败（broken_at=%d）", brokenAt)
+		c.Header("X-Audit-Broken-At", strconv.FormatInt(brokenAt, 10))
+		utils.ErrorWithDetail(c, http.StatusInternalServerError, msg, err)
 		return
 	}
 	utils.Success(c, gin.H{"ok": true})

@@ -67,10 +67,17 @@ func (h *RBACManagementHandler) UpsertRole(c *gin.Context) {
 	// 2026-06-28 RBAC v3 B6 审计增强：upsert 前先查旧 role，记录 old_data_scope/old_permissions/old_custom_dept_ids。
 	// 这样审计查询能精确识别权限升级事件（如 manager dept→all 或新增 contract:create）。
 	oldRole, _ := database.GetRoleByCode(r.Code)
+	// Issue #16：之前 oldRole 仅作为探针使用（_ = ...），audit 只记 new 状态；
+	// 现在保留完整的 old/new diff 用于权限升级取证。
+	var (
+		oldDataScope     string
+		oldPermissions   []string
+		oldCustomDeptIDs []int64
+	)
 	if oldRole != nil {
-		_ = oldRole.DataScope
-		_ = len(oldRole.Permissions)
-		_ = oldRole.CustomDeptIDs
+		oldDataScope = oldRole.DataScope
+		oldPermissions = oldRole.Permissions
+		oldCustomDeptIDs = oldRole.CustomDeptIDs
 	}
 	if err := database.UpsertRole(&r); err != nil {
 		utils.BadRequest(c, err.Error())
@@ -82,55 +89,37 @@ func (h *RBACManagementHandler) UpsertRole(c *gin.Context) {
 	middleware.InvalidateDataScopeCacheByRole(r.Code)
 	role, _ := database.GetRoleByCode(r.Code)
 	newDataScope := ""
+	newCustomDeptIDs := []int64{}
 	roleID := int64(0)
 	if role != nil {
 		newDataScope = role.DataScope
 		roleID = role.ID
+		newCustomDeptIDs = role.CustomDeptIDs
 	}
-	// 审计：role upsert（失败仅 warn，不影响业务）。
+	// Issue #16：审计 detail 同时记录 before / after + changed 标志，
+	// 便于查询"权限升级"事件（manager dept→all、+ contract:create 等）。
+	// Issue M-12：改用 utils.PermSetsEqual / Int64SlicesEqual 公开 API。
+	// Issue M-22（附加）：nil slice 在序列化时变 null，与 [] 不一致会导致
+	// changed 永远为 true；统一归一化为非 nil 空 slice。
+	oldPermsN := utils.NormalizeStringSlice(oldPermissions)
+	newPermsN := utils.NormalizeStringSlice(r.Permissions)
+	oldDeptsN := utils.NormalizeInt64Slice(oldCustomDeptIDs)
+	newDeptsN := utils.NormalizeInt64Slice(newCustomDeptIDs)
+	changed := !utils.PermSetsEqual(oldPermsN, newPermsN) ||
+		oldDataScope != newDataScope ||
+		!utils.Int64SlicesEqual(oldDeptsN, newDeptsN)
 	database.RecordAudit(c, database.AuditTargetRBACRole, roleID, "upsert", gin.H{
-		"code":        r.Code,
-		"name":        r.Name,
-		"data_scope":  newDataScope,
-		"permissions": r.Permissions,
+		"code":               r.Code,
+		"name":               r.Name,
+		"changed":            changed,
+		"old_data_scope":     oldDataScope,
+		"new_data_scope":     newDataScope,
+		"old_permissions":    oldPermsN,
+		"new_permissions":    newPermsN,
+		"old_custom_dept_ids":  oldDeptsN,
+		"new_custom_dept_ids":  newDeptsN,
 	})
 	utils.Success(c, gin.H{"code": r.Code, "data_scope": newDataScope, "message": "保存成功"})
-}
-
-// permSetsEqual 比较两个 permission 集合是否相同（无视顺序）。
-func permSetsEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	m := make(map[string]int, len(a))
-	for _, s := range a {
-		m[s]++
-	}
-	for _, s := range b {
-		m[s]--
-		if m[s] < 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// int64SlicesEqual 比较两个 int64 slice 是否相同（无视顺序）。
-func int64SlicesEqual(a, b []int64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	m := make(map[int64]int, len(a))
-	for _, v := range a {
-		m[v]++
-	}
-	for _, v := range b {
-		m[v]--
-		if m[v] < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // DeleteRole DELETE /api/rbac/roles/:code

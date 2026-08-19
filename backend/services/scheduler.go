@@ -52,7 +52,7 @@ type Scheduler struct {
 	stopped atomic.Bool
 }
 
-var globalScheduler *Scheduler
+var globalScheduler atomic.Pointer[Scheduler]
 
 // InitScheduler 初始化并启动调度器。必须在 database.InitDatabase 之后调用。
 func InitScheduler(cfg *config.Config) error {
@@ -92,8 +92,8 @@ func InitScheduler(cfg *config.Config) error {
 	// 避免部分初始化的 s 被 GetScheduler() 取到后 Stop() 触发 close(nil)/nil deref。
 	// 但 cfg.Scheduler.Enabled=false 时 init 早 return，下面的 registerBuiltinHandlers
 	// 不会被调用；这里用 prevScheduler / restore 模式做"原子提交"。
-	prevScheduler := globalScheduler
-	globalScheduler = s
+	prevScheduler := globalScheduler.Load()
+	globalScheduler.Store(s)
 
 	// 1. 注册内置 handler
 	registerBuiltinHandlers(s, cfg)
@@ -107,7 +107,7 @@ func InitScheduler(cfg *config.Config) error {
 	if err := s.loadAllActive(); err != nil {
 		// 加载失败：started 保持 false，Running() 返回 false；
 		// 回退 globalScheduler 到原值，并把部分构造的 cron 停掉防止泄漏。
-		globalScheduler = prevScheduler
+		globalScheduler.Store(prevScheduler)
 		if ctx := s.cron.Stop(); ctx != nil {
 			<-ctx.Done()
 		}
@@ -132,7 +132,7 @@ func InitScheduler(cfg *config.Config) error {
 
 // GetScheduler 取全局实例。
 func GetScheduler() *Scheduler {
-	return globalScheduler
+	return globalScheduler.Load()
 }
 
 // Stop 优雅停机。幂等：重复调用不会触发 close(stopCh) panic。

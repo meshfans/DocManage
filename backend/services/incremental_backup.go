@@ -352,11 +352,15 @@ func (s *IncrementalBackupService) runAutoFullBackup() error {
 		return fmt.Errorf("备份服务未启用（cfg.Backup.Enabled=false），无法自动全量")
 	}
 	utils.Info("自动全量基线启动（dir=%s）", bs.cfg.Dir)
-	_, err := bs.performBackup(false) // isManual=false（自动全量基线，参与自动清理）
+	_, err := bs.performBackup(false, 0) // isManual=false（自动全量基线），actor=system
 	// performBackup 是同步的，调用返回即完成
+	// Issue #9：自动全量基线是定时任务入口的成功/失败路径，
+	// 应与 scheduler_jobs.go 一样上报 backup.scheduled.{success,failed}。
 	if err != nil {
+		utils.IncBusinessEvent("backup.scheduled.failed")
 		return fmt.Errorf("自动全量执行失败: %w", err)
 	}
+	utils.IncBusinessEvent("backup.scheduled.success")
 	return nil
 }
 

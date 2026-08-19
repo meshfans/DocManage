@@ -57,6 +57,43 @@ func RecordAuditBy(c *gin.Context, actorUserID int64, targetType string, targetI
 	}
 }
 
+// RecordAuditStandalone 不依赖 gin.Context 的审计写入。
+// 适用于 service 层（备份/恢复/调度任务等无 HTTP 请求上下文的场景）。
+// 调用方负责提供 actorUserID / actorIP / userAgent。
+//
+// 失败容忍：写入失败仅 warn，绝不阻塞业务（与 RecordAudit 一致）。
+//
+// Issue #14：原实现要求 caller 传 *gin.Context，导致 backup/restore/verify
+// 等 service 层完全无法接入审计。新增此 helper 以解耦。
+func RecordAuditStandalone(actorUserID int64, targetType string, targetID int64, action, actorIP, userAgent string, meta ...interface{}) {
+	var detail string
+	if len(meta) > 0 && meta[0] != nil {
+		b, err := json.Marshal(meta[0])
+		if err != nil {
+			fmt.Printf("[audit] RecordAuditStandalone: json.Marshal meta 失败, target=%s/%d action=%s err=%v\n",
+				targetType, targetID, action, err)
+			detail = "{}"
+		} else {
+			detail = string(b)
+		}
+	} else {
+		detail = "{}"
+	}
+
+	if _, err := AppendAudit(
+		targetType,
+		targetID,
+		action,
+		actorUserID,
+		actorIP,
+		userAgent,
+		detail,
+	); err != nil {
+		fmt.Printf("[audit] RecordAuditStandalone 写入失败, target=%s/%d action=%s err=%v\n",
+			targetType, targetID, action, err)
+	}
+}
+
 // RecordAudit 从 gin.Context 抽取审计上下文并写入 audit_log。
 //
 // 入参：

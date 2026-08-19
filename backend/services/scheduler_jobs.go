@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // registerBuiltinHandlers 注册调度器内置 handler。
@@ -63,7 +65,7 @@ func makeBackupJobHandler() JobFunc {
 		}
 		// 委托给现有的 performBackup（保留所有业务逻辑）
 		// performBackup 内部不感知 ctx；外层 timeout 写库为 timeout 状态
-		manifestID, err := bs.performBackup(false) // isManual=false（定时任务调度）
+		manifestID, err := bs.performBackup(false, 0) // isManual=false（定时任务调度），actor=system
 		if err != nil {
 			// Round 16 业务事件埋点：定时调度全量备份失败（与 scheduled_task.run.* 并列通道）。
 			utils.IncBusinessEvent("backup.scheduled.failed")
@@ -170,11 +172,18 @@ func makeBackupRecoverJobHandler() JobFunc {
 			"调度恢复：pending/running 超 30 分钟",
 		)
 		if err != nil {
+			// Issue M-8：调度任务失败写 audit，便于追溯 recurring 失败。
+			// 用 AuditTargetSystem 而非 Backup：backup 不允许 target_id==0。
+			database.RecordAuditStandalone(0, database.AuditTargetSystem, 0,
+				"recover.failed", "", "scheduler", gin.H{"err": err.Error(), "task": "system.backup_recover"})
 			return "", fmt.Errorf("恢复 stuck 备份失败: %w", err)
 		}
 		if n == 0 {
 			return "无 stuck 备份需要清理", nil
 		}
+		// Issue M-8：清理了 stuck 备份属于安全事件（进程被 kill 后遗症），留痕。
+		database.RecordAuditStandalone(0, database.AuditTargetSystem, 0,
+			"recover.success", "", "scheduler", gin.H{"recovered": n, "task": "system.backup_recover"})
 		utils.Warn("[BackupRecover] 清理 %d 条 stuck 备份", n)
 		return fmt.Sprintf("清理 %d 条 stuck 备份", n), nil
 	}
@@ -196,9 +205,22 @@ func makeBackupDrillJobHandler() JobFunc {
 		}
 		result, err := DrillLatestBackup()
 		if err != nil && result == nil {
+			// Issue M-8：演练初始化失败属安全事件（环境配置/磁盘异常）。
+			database.RecordAuditStandalone(0, database.AuditTargetSystem, 0,
+				"drill.failed", "", "scheduler",
+				gin.H{"err": err.Error(), "task": "system.backup_drill"})
 			return "", fmt.Errorf("演练初始化失败: %w", err)
 		}
 		if result != nil && result.Success {
+			// Issue M-8：演练通过是合规审计要求（L4 完整性复核证据）。
+			database.RecordAuditStandalone(0, database.AuditTargetSystem, 0,
+				"drill.success", "", "scheduler", gin.H{
+					"task":          "system.backup_drill",
+					"manifest_id":   result.ManifestID,
+					"integrity":     result.IntegrityCheck,
+					"sampled_rows":  result.SampledRows,
+					"duration_ms":   result.DurationMS,
+				})
 			return fmt.Sprintf("演练通过: id=%d, integrity=%s, tables=%d, rows=%d, duration=%dms",
 				result.ManifestID, result.IntegrityCheck,
 				result.SampledTables, result.SampledRows, result.DurationMS), nil
@@ -215,6 +237,14 @@ func makeBackupDrillJobHandler() JobFunc {
 			}
 			errMsg = fmt.Sprintf("演练失败: id=%d, integrity=%s, root=%s",
 				result.ManifestID, result.IntegrityCheck, rootCause)
+			// Issue M-8：演练失败的取证留痕（含 manifest_id + root cause）。
+			database.RecordAuditStandalone(0, database.AuditTargetSystem, 0,
+				"drill.failed", "", "scheduler", gin.H{
+					"task":        "system.backup_drill",
+					"manifest_id": result.ManifestID,
+					"integrity":   result.IntegrityCheck,
+					"root_cause":  rootCause,
+				})
 		}
 		if err != nil {
 			errMsg += ": " + err.Error()
@@ -241,6 +271,13 @@ func makeLogCleanJobHandler() JobFunc {
 		}
 		// 调用现有方法（导出后的 CleanOldLogs）
 		l.CleanOldLogs()
+		// Issue M-8：日志清理属可审计操作（清理后无法追溯删除前的日志内容）。
+		database.RecordAuditStandalone(0, database.AuditTargetSystem, 0,
+			"log_clean.success", "", "scheduler", gin.H{
+				"task":         "system.log_clean",
+				"dir":          l.Dir(),
+				"days_to_keep": l.DaysToKeep(),
+			})
 		return fmt.Sprintf("日志清理完成 dir=%s days_to_keep=%d", l.Dir(), l.DaysToKeep()), nil
 	}
 }

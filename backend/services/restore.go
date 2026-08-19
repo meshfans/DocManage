@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ==================== 备份恢复服务（第四阶段 Phase 4.1 衔接）====================
@@ -81,21 +83,78 @@ func NewRestoreService(cfg *config.Config) *RestoreService {
 
 // Run 执行恢复（干跑或实际）。
 //
+// 参数：
+//   - req：恢复请求（full_backup_id / incremental_ids / dry_run）
+//   - operatorActorID：触发者 user_id（admin only，handler 端从 c.GetInt64("user_id") 取）
+//
 // 流程：
 //  1. 查 FullBackupID 对应的 manifest（必须 status=success / verified）
 //  2. 收集要应用的增量（按时间顺序）
 //  3. 校验所有 zip 文件存在 + 哈希匹配（若有）
 //  4. 干跑 → 返回 actions 列表
 //  5. 实际恢复 → 快照当前数据 → 解压全量 → 顺序应用增量 → 写入恢复审计
-func (s *RestoreService) Run(req RestoreRequest) (result *RestoreResult, err error) {
+//
+// Issue C-3：operatorActorID 用于 audit_log actor 字段，避免 actor 永久 0。
+// Issue C-4：本函数 defer 内已统一埋点，handler 不再重复 IncBusinessEvent。
+func (s *RestoreService) Run(req RestoreRequest, operatorActorID int64) (result *RestoreResult, err error) {
 	// Round 16 业务事件埋点：在 Run 出口汇合点按 err 状态上报一次（涵盖 dry-run 路径，
 	// 避免在每个 return 处重复埋点）。
+	//
+	// Issue #8：DryRun 路径不计入 backup.restore.success，避免运营面板误以为
+	// 已恢复成功；新增 backup.restore.dry_run 事件用于观测。
 	defer func() {
+		// Issue M-2：err.Error() 不直接写入 detail，避免泄漏内部路径；
+		// 归一化为 enum，handler 端 response body 与 audit detail 保持一致。
+		var reason string
 		if err != nil {
-			utils.IncBusinessEvent("backup.restore.failed")
-			return
+			switch {
+			case strings.Contains(err.Error(), "manifest"):
+				reason = "manifest_invalid"
+			case strings.Contains(err.Error(), "snapshot"):
+				reason = "snapshot_failed"
+			case strings.Contains(err.Error(), "extract") || strings.Contains(err.Error(), "zip"):
+				reason = "extract_failed"
+			case strings.Contains(err.Error(), "integrity") || strings.Contains(err.Error(), "PRAGMA"):
+				reason = "integrity_failed"
+			default:
+				reason = "internal_error"
+			}
 		}
-		utils.IncBusinessEvent("backup.restore.success")
+		var auditAction string
+		if req.DryRun {
+			if err != nil {
+				auditAction = "restore.failed"
+				utils.IncBusinessEvent("backup.restore.failed")
+			} else {
+				auditAction = "restore.dry_run"
+				utils.IncBusinessEvent("backup.restore.dry_run")
+			}
+		} else {
+			if err != nil {
+				auditAction = "restore.failed"
+				utils.IncBusinessEvent("backup.restore.failed")
+			} else {
+				auditAction = "restore.success"
+				utils.IncBusinessEvent("backup.restore.success")
+			}
+		}
+		// Issue C-4：service 层统一写 audit，handler 端不再重复 RecordAudit。
+		// Issue C-3：使用 operatorActorID 记录真实 admin，避免 actor=0。
+		// Issue M-9：scheduler/系统调用时 actorIP 为空，至少填入节点标识
+		// 避免被攻击者用空串伪造。
+		detail := gin.H{
+			"full_backup_id":  req.FullBackupID,
+			"incremental_ids": req.IncrementalIDs,
+			"dry_run":         req.DryRun,
+		}
+		if result != nil {
+			detail["actions"] = len(result.Actions)
+		}
+		if err != nil {
+			detail["reason"] = reason
+		}
+		database.RecordAuditStandalone(operatorActorID, database.AuditTargetBackup, req.FullBackupID,
+			auditAction, "", "scheduler", detail)
 	}()
 	result = &RestoreResult{DryRun: req.DryRun}
 
