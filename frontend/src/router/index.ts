@@ -153,6 +153,12 @@ router.beforeEach((to: ToRouteType, _from, next) => {
     // 2026-06-27 RBAC v1.2：替代 meta.roles，按 meta.permissions（OR 语义）判断
     //   - 是否需要权限检查由 isRouteGuarded（utils/auth.ts）单一权威判断
     //   - 实际匹配走 hasAnyPerms（OR 语义），与 sidebar filterNoPermissionTree 共用同一份判断
+    // ⚠️ M-F4 修复（2026-08-19）：adminOnly 路由在守卫这里也拦截，
+    //   防止非 admin 用户直接输 URL 绕过菜单过滤。
+    if (to.meta?.adminOnly === true && userInfo.username !== "admin") {
+      next({ path: "/error/403" });
+      return;
+    }
     if (isRouteGuarded(to.meta ?? {})) {
       if (!hasAnyPerms(to.meta.permissions as string[])) {
         next({ path: "/error/403" });

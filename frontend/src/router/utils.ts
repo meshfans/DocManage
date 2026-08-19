@@ -20,6 +20,7 @@ import { hasAnyPerms, isRouteGuarded } from "@/utils/auth";
 import { type menuType, routerArrays } from "@/layout/types";
 import { useMultiTagsStoreHook } from "@/store/modules/multiTags";
 import { usePermissionStoreHook } from "@/store/modules/permission";
+import { useUserStoreHook } from "@/store/modules/user";
 const IFrame = () => import("@/layout/frame.vue");
 // https://cn.vitejs.dev/guide/features.html#glob-import
 const modulesRoutes = import.meta.glob("/src/views/**/*.{vue,tsx}");
@@ -86,9 +87,19 @@ function isOneOfArray(a: Array<string>, b: Array<string>) {
  *  - 通过 isRouteGuarded（utils/auth.ts）单一权威判断"是否需要权限"，与 route guard 共用
  *    避免两处分支漂移导致的安全漏洞
  *  - 实际权限匹配走 hasAnyPerms（utils/auth.ts），保持与按钮级 v-perms 指令一致的逻辑入口
+ *  - ⚠️ M-F4 修复（2026-08-19）：新增 adminOnly 标记，绕过 permissions 检查；
+ *    强制要求 useUserStore.username === "admin" 才显示该路由。
+ *    用途：审计等只允许 admin 看的页面（后端走 RequireAdmin 兜底）。
+ *    非 admin 用户访问该路由 → 菜单不显示 + 路由守卫拦截到 403。
  */
 function filterNoPermissionTree(data: RouteComponent[]) {
+  const userStore = useUserStoreHook();
+  const isAdmin = userStore.username === "admin";
   const newTree = cloneDeep(data).filter((v: any) => {
+    // M-F4：adminOnly 路由强制 admin 才能看到
+    if (v.meta?.adminOnly === true && !isAdmin) {
+      return false;
+    }
     if (!isRouteGuarded(v.meta ?? {})) return true; // 公共页 / 空数组 → 默认开放
     return hasAnyPerms(v.meta.permissions);
   });

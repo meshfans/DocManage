@@ -66,6 +66,12 @@ declare global {
     activePath?: string;
     /** 当前页面是否已经加载过 */
     loaded?: boolean;
+    /** ⚠️ M-F4 修复（2026-08-19）：admin 角色独占路由标记
+     *  - 为 true 时绕过 permissions 检查，强制要求 useUserStore.username === "admin"
+     *  - 菜单过滤 + 路由守卫都判定（双向防御）
+     *  - 用途：审计等只允许 admin 看的页面（后端走 RequireAdmin 兜底）
+     */
+    adminOnly?: boolean;
   }
 
   /**
