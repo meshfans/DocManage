@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -95,14 +96,11 @@ func main() {
 	}
 
 	// 初始化统一调度器（必须在 database.InitDatabase 之后）
+	// ⚠️ 2026-08-19 Round 18 修复：删除 defer scheduler.Stop()。
+	// 此前 defer 在 main 退出时执行，与 services.RunGraceful 内部的 sched.Stop()
+	// 重复关停。统一关停入口见文件末尾 RunGraceful。
 	if err := services.InitScheduler(cfg); err != nil {
 		utils.Warn("调度器初始化失败: %v", err)
-	} else {
-		defer func() {
-			if s := services.GetScheduler(); s != nil {
-				s.Stop()
-			}
-		}()
 	}
 
 	jwtUtils, err := utils.NewJWTUtilsFromConfig(
@@ -116,13 +114,11 @@ func main() {
 
 	combinedServer := server.NewCombinedServer(cfg, jwtUtils, wsHandler)
 
-	handlers.SetGracefulShutdownFunc(func() {
-		utils.Info("服务器关闭中...")
-		// WS hub 关闭由 combinedServer.Shutdown() 统一触发（避免重复关停）。
-		// 关停顺序：HTTP server 停接新请求 → WS hub 关闭所有连接 → DB 关闭。
-		combinedServer.Shutdown()
-		database.CloseDatabase()
-	})
+	// ⚠️ 2026-08-19 Round 18 修复：删除 SetGracefulShutdownFunc 注册。
+	// 此前该回调在 handler 失败时也会被触发（如 combinedServer.Start 失败），
+	// 会与 RunGraceful 内部 combinedServer.Shutdown() + database.CloseDatabase()
+	// 重复关停，导致 DB / WS 双重关闭 + recover 不到的二次报错。
+	// 统一关停入口见 RunGraceful，它是进程唯一的 SIGTERM/SIGINT 出口。
 
 	go func() {
 		if err := combinedServer.Start(); err != nil {
@@ -130,5 +126,7 @@ func main() {
 		}
 	}()
 
-	select {}
+	// 2026-08-19 Round 18：单一阻塞入口，由 SIGTERM/SIGINT 触发优雅关停。
+	// 关停顺序：HTTP → WS → Scheduler → DB，全程埋点 shutdown_stage_duration_seconds。
+	services.RunGraceful(context.Background(), combinedServer)
 }

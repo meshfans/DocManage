@@ -1049,6 +1049,12 @@ var (
 	dbMaxIdleClosedCounter   *counterImpl
 	dbMaxIdleTimeClosedCount *counterImpl
 	dbMaxLifetimeClosedCount *counterImpl
+
+	// ====== Round 18：优雅关停阶段耗时（histogram）======
+	// stage 取值：signal / http / ws / scheduler / db / final
+	// 设计点：仅 6 个 stage 取值，可以走低基数 label 方案（CounterVec 也可，
+	// 但直方图能区分「正常 1ms 内完成」vs「超时 30s+」的尾部）。
+	shutdownStageDuration *HistogramVec
 )
 
 // metricsInit 注册默认指标。包级别 init() 调用一次。
@@ -1116,7 +1122,76 @@ func metricsInit() {
 		defaultRegistry.MustRegisterCollector("scheduler_running", &cGauge{n: "scheduler_running", h: "调度器是否运行（1=运行，0=停止）", g: schedulerRunningGauge})
 		defaultRegistry.MustRegisterCollector("scheduler_entries", &cGauge{n: "scheduler_entries", h: "调度器当前已注册的 cron entry 数", g: schedulerEntriesGauge})
 		defaultRegistry.MustRegisterCollector("scheduler_running_tasks", &cGauge{n: "scheduler_running_tasks", h: "调度器当前正在执行的任务数", g: schedulerRunningTasks})
+
+		// ====== Round 18：关停阶段耗时直方图 ======
+		// bucket 边界按"毫秒级启动 + 秒级 in-flight drain"双区间：
+		//   0.001 / 0.005 / 0.01 / 0.05 / 0.1 / 0.5 / 1 / 5 / 30（秒）
+		// drain 阶段 30s 是 HTTP 和 WS 的 context timeout 上界。
+		shutdownStageDuration = NewHistogramVec(
+			"shutdown_stage_duration_seconds",
+			"优雅关停各阶段耗时（秒）",
+			[]string{"stage"},
+			[]float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 30},
+		)
+		defaultRegistry.MustRegisterCollector("shutdown_stage_duration_seconds", &cHistogramVec{
+			n: "shutdown_stage_duration_seconds",
+			h: "优雅关停各阶段耗时（秒）",
+			v: shutdownStageDuration,
+		})
+
+		// 预热：让所有 stage 的 bucket / count 在 /metrics 首次访问时就已经可见
+		// 注意：必须放在 metricsInit 内部（Once.Do 闭包里），否则会被 metricsInit
+		// 重新进入导致 Once 自递归死锁（sync.Once 不可重入）。
+		for _, stage := range []string{
+			"signal", "http", "ws", "scheduler", "db", "final",
+		} {
+			if h := shutdownStageDuration.WithLabelValues(stage); h != nil {
+				h.Observe(0)
+			}
+		}
 	})
+}
+
+// ObserveShutdownStage 记录某个关停阶段的耗时（秒）。
+// stage 取值：signal / http / ws / scheduler / db / final
+//
+// 由 main.go / services.RunGraceful 调用，第三方模块不应直接复用。
+func ObserveShutdownStage(stage string, durationSec float64) {
+	metricsInit()
+	if stage == "" {
+		stage = "unknown"
+	}
+	h := shutdownStageDuration.WithLabelValues(stage)
+	if h != nil {
+		h.Observe(durationSec)
+	}
+}
+
+// WarmShutdownStageMetrics 预热 shutdown histogram 的全部 stage label。
+//
+// ⚠️ DEPRECATED（Round 18 内部修复后）：不要再调用本函数。
+// 预热已在 metricsInit 内部直接完成，外部调用会因 sync.Once 不可重入
+// 触发栈溢出。保留本函数仅为二进制兼容，如外部代码误引用也不会编译失败。
+//
+// 目的：Prometheus / Grafana 上线后立即能看到全部 stage 的 bucket 边界，
+// 避免首周末关停时出现"series 突然出现"导致告警阈值不稳。
+func WarmShutdownStageMetrics() {
+	// 故意保留为空：原逻辑（metricsInit → WarmShutdownStageMetrics → metricsInit）
+	// 是 sync.Once 递归死锁。预热已在 metricsInit 内部完成。
+}
+
+// ResetDBStatSnapshot 重置 DB 指标的计算快照（Issue #2）。
+//
+// 场景：数据库 restore / reload 后，driver 计数器全部从 0 开始；
+//   计数器是 "delta += curr - prev" 类型（见 dbMaxIdleClosedCounter 等），
+//   若不 reset，"prev" 还是旧 DB 的累积值，delta 永远是负数，counter 永久失活。
+//
+// 当前 round 18 实现：metrics 状态由 metricsInit 一次性初始化，
+//   "curr-prev" 增量算法在 statistics.go 内部用局部 prev 维护，
+//   跨 DB 句柄自然隔离。所以这里实际无逻辑，仅作为兼容占位。
+// 如未来切换到全局 prev，需在此处显式重置。
+func ResetDBStatSnapshot() {
+	// no-op 占位：见函数注释。当前实现下 driver 状态自管理。
 }
 
 // DefaultRegistry 返回全局默认 Registry（函数形式 API，handoff 约定）。

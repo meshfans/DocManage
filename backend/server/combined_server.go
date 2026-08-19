@@ -458,12 +458,21 @@ func (s *CombinedServer) Shutdown() {
 
 	// 关停顺序：HTTP server 先停接新请求 → WS hub 后关闭连接。
 	// 反过来的话，HTTP 关停期间还能收请求但 WS 已关闭，会出现"调用成功但收不到推送"的错觉。
+	//
+	// 2026-08-19 Round 18 M-E2 修复：在 HTTP / WS 内部各自埋点 stage duration；
+	// 上层 services.RunGraceful 用 "http_ws" 合并 stage 记录整段耗时。
+	httpStart := time.Now()
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		utils.LogError("API服务器关闭超时: %v", err)
 	}
+	utils.ObserveShutdownStage("http", time.Since(httpStart).Seconds())
 
 	if s.wsHandler != nil {
+		wsStart := time.Now()
 		s.wsHandler.Shutdown()
+		utils.ObserveShutdownStage("ws", time.Since(wsStart).Seconds())
+	} else {
+		utils.ObserveShutdownStage("ws", 0)
 	}
 }
 
