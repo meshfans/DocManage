@@ -273,31 +273,6 @@ func (h *RBACManagementHandler) CheckPermission(c *gin.Context) {
 	})
 }
 
-// IsRBACAdminByName 纯函数版 admin 旁路（无 gin.Context）
-//
-// 2026-06-25 P0-6.5 修复：原实现 `username == "admin"` 是死代码（hardcoded bypass，理论设计）。
-// 现重构为：DB-backed，但保留纯函数签名（兼容历史调用点）。
-// 真实 admin 判定 = DB users.roles 含 "admin" → 见 GetUserHasRole。
-func IsRBACAdminByName(username string) bool {
-	if username == "" {
-		return false
-	}
-	user, err := database.GetUserByUsername(username)
-	if err != nil || user == nil {
-		return false
-	}
-	var roles []string
-	if err := json.Unmarshal([]byte(user.Roles), &roles); err != nil {
-		return false
-	}
-	for _, r := range roles {
-		if r == "admin" {
-			return true
-		}
-	}
-	return false
-}
-
 // EnsureAdminSafety 校验修改某用户的角色不会让系统失去所有 admin。
 // 调用场景：AssignUserRoles / UpdateUser 等修改用户角色前。
 // 入参：
