@@ -1208,6 +1208,12 @@ func GetDefaultRegistry() *Registry {
 
 // IncBusinessEvent 业务事件计数 +1（按 event 区分）。
 // event 为空时使用 "unknown"，避免产生无 label 的指标。
+//
+// J.8：标记 Deprecated，外部业务代码应改用 services.PublishEvent，
+// 事件总线会经 metricsSubscriber 同步到本指标（保持 label 集合不变）。
+// 本函数保留仅为 eventbus.go 内置兼容桥接使用。
+//
+// Deprecated: 改用 services.PublishEvent("event.name")。
 func IncBusinessEvent(event string) {
 	metricsInit()
 	if event == "" {
