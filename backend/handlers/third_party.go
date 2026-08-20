@@ -612,6 +612,16 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 			utils.Warn("[第三方合同] WORM LockOnce 失败: snowid=%s, err=%v", snowid, lockErr)
 		}
 	}
+	// Phase 6 (Critical #8)：pdf_lock 审计（WORM LockOnce 成功的事件记录）。
+	// 即使 LockOnce 失败也尝试记 audit，便于事后追溯哪些 PDF 缺锁。
+	database.RecordAudit(c, database.AuditTargetPDFLock, id, "lock", gin.H{
+		"snowid":   snowid,
+		"abs_path": absPath,
+		"size":     len(pdfBytes),
+		"sm3":      hash.SM3Hash,
+		"sha256":   hash.SHA256Hash,
+		"contract_id": id,
+	})
 	utils.Success(c, gin.H{
 		"file_size":          len(pdfBytes),
 		"file_sm3_hash":      hash.SM3Hash,

@@ -33,17 +33,27 @@ import (
 const HashChainGenesis = "GENESIS"
 
 // AuditTargetType 审计目标类型常量（与 models/audit.go 注释字典保持一致）。
+//
+// Phase 6 (Critical #8) 2026-08-20：AuditTargetSeal / AuditTargetFlow /
+// AuditTargetConsentLetter / AuditTargetContract 当前**无对应业务实体**
+// （grep 确认：database / handlers / models 中无 seal / flow_step /
+// consent_letter 表与 handler）。它们是早期 schema 设计预留，保留为
+// Deprecated 常量以便将来若新增对应业务模块时可立即启用，且不让 AppendAudit
+// 调用点报"未定义"。
 const (
 	AuditTargetMedia           = "media"
 	AuditTargetSignature       = "signature"
+	// Deprecated: 项目内无 seal 业务实体。保留以备后续扩展。
 	AuditTargetSeal            = "seal"
 	AuditTargetContract        = "contract"   // 合同表单保存（form_json 修改）
-	AuditTargetFlow            = "flow"       // 流转步骤提交
+	// Deprecated: 项目内无 flow_step 业务实体（流程审批模块未上线）。保留以备扩展。
+	AuditTargetFlow            = "flow"
 	AuditTargetThirdParty      = "thirdparty" // Trail 业务命名（无下划线，保持向后兼容）
 	AuditTargetReminder        = "reminder"
 	AuditTargetRBACRole        = "rbac_role"
 	AuditTargetRBACPermission  = "rbac_permission"
 	AuditTargetRBACUserBinding = "rbac_user_binding"
+	// Deprecated: consent_letter（同意书）合规事件保留位；当前未上线业务实体。
 	AuditTargetConsentLetter   = "consent_letter"
 	AuditTargetPDFLock         = "pdf_lock"
 	AuditTargetCustomer        = "customer"

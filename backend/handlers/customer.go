@@ -414,6 +414,12 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 		"file_path":        filepath.Base(lastFilePath),
 		"record_id":        recordID,
 	})
+	// Phase 6 (Critical #8)：signature lock 审计（WORM LockOnce 成功的事件记录）。
+	database.RecordAudit(c, database.AuditTargetSignature, req.CustomerID, "lock", gin.H{
+		"signature_snowid": snowid,
+		"file_path":        filepath.Base(lastFilePath),
+		"record_id":        recordID,
+	})
 	utils.Success(c, gin.H{
 		"message":          "签名上传成功",
 		"signature_snowid": snowid,
