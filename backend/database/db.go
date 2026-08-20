@@ -677,6 +677,18 @@ func createTables() error {
 		SELECT RAISE(ABORT, 'audit_log is append-only');
 	END;
 
+	-- WORM（一次写入，多次读取）最小可用：append-only + 路径锁 + DB 哈希记录
+	-- Phase 1 (Critical #1)。本期不做：SM3 数据快照 / 定期调验 / 管理员"临时解锁"。
+	-- file_path 用程序生成 snowid 前缀，DB+OS 双锁：上传成功即 lock，后续修改/删除视为篡改。
+	CREATE TABLE IF NOT EXISTS worm_record (
+		snowid           TEXT    PRIMARY KEY,                -- 程序生成 snowid
+		file_path        TEXT    NOT NULL UNIQUE,            -- 绝对路径（与 OS 文件一一对应）
+		file_hash_sha256 TEXT    NOT NULL,                   -- 上锁瞬间的 SHA256
+		locked_at        INTEGER NOT NULL,                   -- unix 时间戳
+		locked_by        INTEGER NOT NULL,                   -- user_id
+		locked_reason    TEXT    NOT NULL DEFAULT ''         -- 'customer.signature.upload' / 'thirdparty.contract.upload'
+	);
+
 	-- RBAC：role 表（角色定义）
 	CREATE TABLE IF NOT EXISTS role (
 	    id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -797,6 +809,9 @@ func createIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_perm_path     ON permission(api_path, http_method)`,
 		`CREATE INDEX IF NOT EXISTS idx_perm_module   ON permission(module)`,
 		`CREATE INDEX IF NOT EXISTS idx_perm_status   ON permission(status)`,
+
+		// WORM 索引（按 locked_at 用于审计查询；file_path UNIQUE 已自带索引）
+		`CREATE INDEX IF NOT EXISTS idx_worm_locked_at ON worm_record(locked_at)`,
 	}
 	for _, idx := range indexes {
 		if _, err := DB.Exec(idx); err != nil {

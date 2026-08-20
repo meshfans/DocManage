@@ -338,7 +338,7 @@ func loadCustomDeptIDs(roleCode string) ([]int64, error) {
 // 返回值：
 //   - whereSQL：包含 "deleted_at = 0" 前缀（handler 可直接 AND 业务条件）
 //   - args：占位符对应的实参
-//   - err：白名单校验失败 / 必填列缺失
+//   - err：白名单校验失败 / 必填列缺失 / dept 模式 DepartmentID=0
 //
 // 白名单规则：
 //   - TableAlias：仅允许 [a-zA-Z0-9_]+，空表示无别名
@@ -348,12 +348,17 @@ func loadCustomDeptIDs(roleCode string) ([]int64, error) {
 // 6 个 scope 行为：
 //   - all                       → 仅 deleted_at=0
 //   - self                      → deleted_at=0 AND owner_col=?
-//   - dept                      → deleted_at=0 AND dept_col=?
+//   - dept                      → deleted_at=0 AND dept_col=?（DepartmentID=0 → 返错，避免"看不到数据"误判）
 //   - dept_and_sub              → deleted_at=0 AND dept_col IN (...)
 //   - self_and_sub_dept         → deleted_at=0 AND (owner_col=? OR dept_col IN (...))
 //   - custom                    → deleted_at=0 AND dept_col IN (CustomDepts...)
 //   - 缺列自动降级：缺 OwnerCol → 降级为 dept-only；缺 DeptCol → 降级为 owner-only
 //   - 未知 scope / 参数非法 → 1=0 恒假 + 错误返回
+//
+// 2026-08-19 Round 19 修复（#3）：dept / dept_and_sub / self_and_sub_dept 三种 scope 在
+// DepartmentID=0 时不再静默降级 1=0。历史上未分配主部门的用户用 dept 模式查资源时
+// 表现为"看不到任何数据"（实际是降级到 1=0 恒假），与"无权限 403"难以区分，
+// 排障困难。修复：返回明确错误，handler 端映射 500 + 提示"用户未分配主部门，请联系管理员"。
 func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error) {
 	if scope == nil {
 		return "", nil, fmt.Errorf("scope 不能为 nil")
@@ -396,6 +401,9 @@ func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error)
 		if opts.OwnerCol == "" {
 			// 缺 owner 列 → 降级为 dept（如果有）
 			if opts.DeptCol != "" {
+				if scope.DepartmentID == 0 {
+					return "", nil, fmt.Errorf("用户未分配主部门，无法按 dept 过滤（user_id=%d, scope=self）", scope.UserID)
+				}
 				return base + " AND " + qualify(opts.DeptCol) + " = ?", []any{scope.DepartmentID}, nil
 			}
 			return base + " AND 1=0", nil, nil
@@ -410,6 +418,10 @@ func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error)
 			}
 			return base + " AND 1=0", nil, nil
 		}
+		// Round 19 #3：DepartmentID=0 不再静默 1=0，直接返错
+		if scope.DepartmentID == 0 {
+			return "", nil, fmt.Errorf("data_scope=dept 但 DepartmentID=0（user_id=%d 未分配主部门，请联系管理员）", scope.UserID)
+		}
 		return base + " AND " + qualify(opts.DeptCol) + " = ?", []any{scope.DepartmentID}, nil
 
 	case "dept_and_sub":
@@ -419,8 +431,11 @@ func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error)
 			}
 			return base + " AND 1=0", nil, nil
 		}
+		if scope.DepartmentID == 0 {
+			return "", nil, fmt.Errorf("data_scope=dept_and_sub 但 DepartmentID=0（user_id=%d 未分配主部门）", scope.UserID)
+		}
 		if len(scope.SubDeptIDs) == 0 {
-			return base + " AND 1=0", nil, nil
+			return "", nil, fmt.Errorf("data_scope=dept_and_sub 但 SubDeptIDs 为空（user_id=%d, dept=%d，可能部门已禁用）", scope.UserID, scope.DepartmentID)
 		}
 		where, args := buildINWhere(qualify(opts.DeptCol), scope.SubDeptIDs)
 		return base + " AND " + where, args, nil
@@ -428,13 +443,20 @@ func BuildWhereSQL(scope *UserDataScope, opts FilterOpts) (string, []any, error)
 	case "self_and_sub_dept":
 		// 防御性：OwnerCol 为空时无法拼接 owner_col = ? OR ...，降级到 dept-only。
 		if opts.OwnerCol == "" {
+			if scope.DepartmentID == 0 {
+				return "", nil, fmt.Errorf("data_scope=self_and_sub_dept 但 DepartmentID=0")
+			}
 			if len(scope.SubDeptIDs) == 0 {
 				return base + " AND 1=0", nil, nil
 			}
 			where, args := buildINWhere(qualify(opts.DeptCol), scope.SubDeptIDs)
 			return base + " AND " + where, args, nil
 		}
+		if scope.DepartmentID == 0 {
+			return "", nil, fmt.Errorf("data_scope=self_and_sub_dept 但 DepartmentID=0")
+		}
 		if len(scope.SubDeptIDs) == 0 {
+			// 防御性：部门子树空但 owner 非空 → 仅 owner 过滤
 			return base + " AND " + qualify(opts.OwnerCol) + " = ?", []any{scope.UserID}, nil
 		}
 		where, args := buildINWhere(qualify(opts.DeptCol), scope.SubDeptIDs)

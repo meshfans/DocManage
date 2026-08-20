@@ -62,7 +62,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		return
 	}
 
-	utils.IncBusinessEvent("customer.create")
+	services.PublishEvent("customer.create")
 	// 审计：customer create（detail 仅记字段名 + 长度，避免存敏感数据）。
 	database.RecordAudit(c, database.AuditTargetCustomer, id, "create", gin.H{
 		"snowid":        snowid,
@@ -224,7 +224,7 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 		return
 	}
 
-	utils.IncBusinessEvent("customer.update")
+	services.PublishEvent("customer.update")
 	utils.Success(c, gin.H{
 		"message": "更新成功",
 	})
@@ -262,7 +262,7 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 		return
 	}
 
-	utils.IncBusinessEvent("customer.delete")
+	services.PublishEvent("customer.delete")
 	// 审计：customer delete。
 	database.RecordAudit(c, database.AuditTargetCustomer, req.ID, "delete", nil)
 	utils.Success(c, gin.H{
@@ -347,6 +347,21 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 		return
 	}
 
+	// WORM（Phase 1 Critical #1）：签名图上传成功后立即锁定。
+	// 失败不阻断业务流：签名图已入库 + 落盘，锁失败属运维事件。
+	absSigPath := signatureFilePath
+	if !filepath.IsAbs(absSigPath) {
+		absSigPath = filepath.Join(h.cfg.Upload.Dir, absSigPath)
+	}
+	userID := c.GetInt64("user_id")
+	if _, lockErr := services.LockOnce(absSigPath, snowid, userID, "customer.signature.upload"); lockErr != nil {
+		if errors.Is(lockErr, database.ErrAlreadyLocked) {
+			utils.Warn("[签署] WORM 已存在锁（重复上传）: snowid=%s", snowid)
+		} else {
+			utils.Warn("[签署] WORM LockOnce 失败: snowid=%s, err=%v", snowid, lockErr)
+		}
+	}
+
 	if req.Date != "" {
 		dateData := req.Date
 		if len(dateData) > 22 && dateData[:22] == "data:image/png;base64," {
@@ -372,7 +387,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 		_, _ = database.CreateMessage(adminUser.ID, req.CustomerID, "签名上传通知", msg, "signature")
 	}
 
-	utils.IncBusinessEvent("customer.signature.upload")
+	services.PublishEvent("customer.signature.upload")
 	// 审计：customer signature upload（仅记录文件名 + 字节数，不落二进制）。
 	database.RecordAudit(c, database.AuditTargetCustomer, req.CustomerID, "signature.upload", gin.H{
 		"signature_snowid": snowid,
@@ -480,7 +495,7 @@ func (h *CustomerHandler) CreateCustomerExt(c *gin.Context) {
 		return
 	}
 
-	utils.IncBusinessEvent("customer.create")
+	services.PublishEvent("customer.create")
 	utils.Success(c, gin.H{
 		"id":            id,
 		"snowid":        in.SnowID,
@@ -542,7 +557,7 @@ func (h *CustomerHandler) UpdateCustomerExt(c *gin.Context) {
 		return
 	}
 
-	utils.IncBusinessEvent("customer.update")
+	services.PublishEvent("customer.update")
 	utils.Success(c, gin.H{
 		"id":      req.ID,
 		"message": "更新成功",

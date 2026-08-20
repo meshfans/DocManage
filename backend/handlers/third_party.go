@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -297,7 +298,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	}
 	// 返回详情（含联表）
 	created, _ := database.GetThirdPartyContractByID(id)
-	utils.IncBusinessEvent("thirdparty.contract.create")
+	services.PublishEvent("thirdparty.contract.create")
 	utils.Success(c, gin.H{"id": id, "data": created})
 }
 
@@ -352,6 +353,25 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 		return
 	}
 
+	// WORM（Phase 1 Critical #1）：已上锁的 PDF 二进制不可被 UpdateContract 修改。
+	// 这里只校验"是否被篡改"；UpdateContract 当前不修改 PDF 二进制，仅修改元数据。
+	// 但若未来 UpdateContract 引入"重新上传 PDF"逻辑，应在重传后再 LockOnce（snowid 不变），
+	// 此处 VerifyWorm 主要是"提早发现文件已被外部篡改"，给运维告警。
+	if t.FilePath != "" {
+		storage := services.GetThirdPartyStorage()
+		if absExisting, pathErr := storage.GetAbsolutePath(t.FilePath); pathErr == nil {
+			if locked, _, verifyErr := services.VerifyWorm(absExisting); verifyErr != nil && locked {
+				// 已锁文件被篡改/删除 → 拒绝
+				if errors.Is(verifyErr, services.ErrWormTampered) {
+					utils.Err(c, utils.CodeContractLocked, "合同 PDF 已被锁定且检测到篡改，无法修改")
+					return
+				}
+				// 其它 IO 错误 → 仅日志
+				utils.Warn("[第三方合同] WORM VerifyWorm 异常: err=%v", verifyErr)
+			}
+		}
+	}
+
 	var req struct {
 		Title      string  `json:"title"`
 		Type       string  `json:"type"`
@@ -391,7 +411,7 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 		return
 	}
 	updated, _ := database.GetThirdPartyContractByID(id)
-	utils.IncBusinessEvent("thirdparty.contract.update")
+	services.PublishEvent("thirdparty.contract.update")
 	utils.Success(c, gin.H{"data": updated})
 }
 
@@ -438,7 +458,7 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "更新状态失败: "+err.Error())
 		return
 	}
-	utils.IncBusinessEvent("thirdparty.contract.status.change")
+	services.PublishEvent("thirdparty.contract.status.change")
 	utils.Success(c, gin.H{"message": "状态已更新", "status": req.Status})
 }
 
@@ -477,7 +497,7 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
 		return
 	}
-	utils.IncBusinessEvent("thirdparty.contract.delete")
+	services.PublishEvent("thirdparty.contract.delete")
 	// 审计：thirdparty.contract.delete。
 	database.RecordAudit(c, database.AuditTargetThirdParty, id, "delete", nil)
 	utils.Success(c, gin.H{"message": "已删除"})
@@ -580,6 +600,17 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 		_ = storage.DeleteFile(relPath)
 		utils.Error(c, http.StatusInternalServerError, "更新文件字段失败: "+err.Error())
 		return
+	}
+
+	// 7. WORM（Phase 1 Critical #1）：PDF 落盘后立即锁定。
+	// 失败不阻断业务流：PDF 已入库 + 落盘，锁失败属运维事件。
+	userID := c.GetInt64("user_id")
+	if _, lockErr := services.LockOnce(absPath, snowid, userID, "thirdparty.contract.upload"); lockErr != nil {
+		if errors.Is(lockErr, database.ErrAlreadyLocked) {
+			utils.Warn("[第三方合同] WORM 已存在锁（重复上传）: snowid=%s", snowid)
+		} else {
+			utils.Warn("[第三方合同] WORM LockOnce 失败: snowid=%s, err=%v", snowid, lockErr)
+		}
 	}
 	utils.Success(c, gin.H{
 		"file_size":          len(pdfBytes),
