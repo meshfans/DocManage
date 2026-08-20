@@ -271,6 +271,12 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 }
 
 func (h *CustomerHandler) UploadSignature(c *gin.Context) {
+	// Phase 2a (Critical #4)：上传签名需 customer:upload-signature 权限码
+	// （seed 已配：manager 角色默认绑定）。
+	if !RequirePermission(c, "customer:upload-signature") {
+		return
+	}
+
 	var req struct {
 		CustomerID int64  `json:"customer_id" binding:"required"`
 		Signature  string `json:"signature" binding:"required"`
@@ -279,6 +285,20 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "无效的请求数据")
+		return
+	}
+
+	// base64 上限 5MB（解码前字符串），约对应 3.75MB 二进制（PNG 签名图正常 < 500KB）。
+	// 防护目标：恶意 100MB base64 → OOM / DB 撑爆。
+	const maxSignatureBase64Len = 5 * 1024 * 1024
+	if len(req.Signature) > maxSignatureBase64Len {
+		utils.Error(c, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("签名图过大（base64 > %dMB）", maxSignatureBase64Len/1024/1024))
+		return
+	}
+	if len(req.Date) > maxSignatureBase64Len {
+		utils.Error(c, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("日期图过大（base64 > %dMB）", maxSignatureBase64Len/1024/1024))
 		return
 	}
 
@@ -414,6 +434,17 @@ func (h *CustomerHandler) GetSignature(c *gin.Context) {
 	if err != nil {
 		utils.Error(c, http.StatusNotFound, "签名不存在")
 		return
+	}
+
+	// Phase 2a (Critical #5)：按 customer.owner_user_id 做 RBAC data_scope 比对。
+	// admin 放行；非 admin 仅当本人是 customer.owner_user_id 时可访问。
+	customer, custErr := database.GetCustomerByID(record.CustomerID)
+	if custErr == nil && customer != nil && !IsAdminUser(c) {
+		currentUserID := c.GetInt64("user_id")
+		if customer.OwnerUserID != currentUserID {
+			utils.Error(c, http.StatusForbidden, "无权访问该签名")
+			return
+		}
 	}
 
 	absPath, err := filepath.Abs(record.FilePath)

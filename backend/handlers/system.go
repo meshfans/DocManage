@@ -57,6 +57,12 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 }
 
 func (h *SystemHandler) SetConfig(c *gin.Context) {
+	// Phase 2a (Critical #2)：系统配置是 admin 级权限，普通用户改自己昵称
+	// 走 /api/users/me 而不是 SetConfig。
+	if !RequireAdmin(c) {
+		return
+	}
+
 	var req SystemConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "无效的请求数据")
