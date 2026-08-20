@@ -19,6 +19,19 @@ $ts       = Get-Date -Format 'yyyyMMdd_HHmmss'
 $logPath  = Join-Path $OutDir ('metrics_check_' + $ts + '.log')
 $csvPath  = Join-Path $OutDir ('metrics_check_' + $ts + '.csv')
 
+# K.4：清理 7 天前的 metrics_check_*.csv / .log 历史文件。
+# 历史 CSV 基于 Round 18 之前的事件总线（utils.IncBusinessEvent 直调），
+# Phase 0 之后业务事件已迁到 services.PublishEvent，label 集合可能已扩大，
+# 对比无意义。保留最近 7d 足够排查故障。
+$retentionDays = 7
+$cutoff       = (Get-Date).AddDays(-$retentionDays)
+Get-ChildItem -Path $OutDir -Filter 'metrics_check_*.csv' -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt $cutoff } |
+    ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+Get-ChildItem -Path $OutDir -Filter 'metrics_check_*.log' -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt $cutoff } |
+    ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+
 function Write-Both {
     param([string]$Msg, [string]$Color = '')
     if ($Color -ne '') { Write-Host $Msg -ForegroundColor $Color } else { Write-Host $Msg }

@@ -369,6 +369,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 
 	// WORM（Phase 1 Critical #1）：签名图上传成功后立即锁定。
 	// 失败不阻断业务流：签名图已入库 + 落盘，锁失败属运维事件。
+	// K.1：失败时写审计 + 上报业务事件指标 worm.lock.failed，便于告警 + 追溯缺锁文件。
 	absSigPath := signatureFilePath
 	if !filepath.IsAbs(absSigPath) {
 		absSigPath = filepath.Join(h.cfg.Upload.Dir, absSigPath)
@@ -379,6 +380,13 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 			utils.Warn("[签署] WORM 已存在锁（重复上传）: snowid=%s", snowid)
 		} else {
 			utils.Warn("[签署] WORM LockOnce 失败: snowid=%s, err=%v", snowid, lockErr)
+			services.PublishEvent("worm.lock.failed")
+			database.RecordAudit(c, database.AuditTargetSignature, req.CustomerID, "lock.failed", gin.H{
+				"signature_snowid": snowid,
+				"abs_path":         absSigPath,
+				"err":              lockErr.Error(),
+				"reason":           "post_upload_lock_failed",
+			})
 		}
 	}
 

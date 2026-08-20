@@ -604,12 +604,20 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 
 	// 7. WORM（Phase 1 Critical #1）：PDF 落盘后立即锁定。
 	// 失败不阻断业务流：PDF 已入库 + 落盘，锁失败属运维事件。
+	// K.1：失败时写审计 + 上报业务事件指标 worm.lock.failed，便于告警 + 追溯缺锁文件。
 	userID := c.GetInt64("user_id")
 	if _, lockErr := services.LockOnce(absPath, snowid, userID, "thirdparty.contract.upload"); lockErr != nil {
 		if errors.Is(lockErr, database.ErrAlreadyLocked) {
 			utils.Warn("[第三方合同] WORM 已存在锁（重复上传）: snowid=%s", snowid)
 		} else {
 			utils.Warn("[第三方合同] WORM LockOnce 失败: snowid=%s, err=%v", snowid, lockErr)
+			services.PublishEvent("worm.lock.failed")
+			database.RecordAudit(c, database.AuditTargetPDFLock, id, "lock.failed", gin.H{
+				"snowid":   snowid,
+				"abs_path": absPath,
+				"err":      lockErr.Error(),
+				"reason":   "post_upload_lock_failed",
+			})
 		}
 	}
 	// Phase 6 (Critical #8)：pdf_lock 审计（WORM LockOnce 成功的事件记录）。

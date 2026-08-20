@@ -813,8 +813,14 @@ func createIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_perm_module   ON permission(module)`,
 		`CREATE INDEX IF NOT EXISTS idx_perm_status   ON permission(status)`,
 
-		// WORM 索引（按 locked_at 用于审计查询；file_path UNIQUE 已自带索引）
+		// WORM 索引
+		//   - file_path UNIQUE 已自带索引
+		//   - locked_at：单维时间序列查询（"本周锁数量"）
+		//   - reason+locked_at 复合：审计常见查询模式（"本周签名锁失败列表"）
+		//     使用 reason 前缀而非 locked_at 前缀：reason 选择性更高（4 种枚举值）
+		// K.2：复合索引让"按 reason + 时间窗口"查询走索引扫描而非全表。
 		`CREATE INDEX IF NOT EXISTS idx_worm_locked_at ON worm_record(locked_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_worm_reason_at ON worm_record(locked_reason, locked_at DESC)`,
 	}
 	for _, idx := range indexes {
 		if _, err := DB.Exec(idx); err != nil {

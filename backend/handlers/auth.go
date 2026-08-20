@@ -69,6 +69,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"reason":       "account_locked",
 			"locked_until": user.LockedUntil,
 		})
+		// K.6：埋业务事件（供 Prometheus 告警检测 brute force）
+		services.PublishEvent("auth.login.locked")
 		utils.Err(c, utils.CodeAuthUserDisabled, "账号因登录失败次数过多被临时锁定，请稍后再试")
 		return
 	}
@@ -94,6 +96,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 					"failed_count":  count,
 					"locked_minutes": database.LoginLockMinutes,
 				})
+				// K.6：埋业务事件
+				services.PublishEvent("auth.login.locked")
 			}
 		}
 		utils.Err(c, utils.CodeAuthInvalidCredentials, "用户名或密码错误")
@@ -119,6 +123,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if user.FailedLoginCount > 0 || user.LockedUntil > 0 {
 		if resetErr := database.ResetFailedLogin(user.ID); resetErr != nil {
 			utils.Warn("[Auth.Login] ResetFailedLogin 失败: user_id=%d, err=%v", user.ID, resetErr)
+		} else {
+			// K.6：埋业务事件，区分"无失败计数重置" vs "从锁定恢复"。
+			// event label 不同便于监控告警（如"短期内大量 unlock"可能是误锁定激增）。
+			if user.LockedUntil > 0 {
+				services.PublishEvent("auth.login.unlocked")
+				utils.Info("[Auth.Login] 用户从锁定恢复: username=%s", user.Username)
+			} else {
+				services.PublishEvent("auth.login.reset_counter")
+			}
 		}
 	}
 
