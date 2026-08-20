@@ -271,6 +271,99 @@ curl http://localhost:8091/api/third-party/contracts \
   -H "Authorization: Bearer <access_token>"
 ```
 
+## 7.5 安全与运维说明
+
+> 本节记录 Phase 4a/b、Round 19/20 引入的安全加固与运维要点。生产部署前必读。
+
+### 7.5.1 JWT_SECRET 配置（生产强制）
+
+自 Phase 4b 起，`JWT_SECRET` 通过环境变量注入，避免在配置文件中固化密钥：
+
+| 优先级 | 来源 | 适用 |
+|--------|------|------|
+| 1 | 环境变量 `JWT_SECRET` | **生产强制**；`docker-compose.yml` 用 `${JWT_SECRET:?JWT_SECRET is required}` 强制注入 |
+| 2 | `bin/config.json` / `bin/config.test-main.json` 的 `jwt.secret` 字段 | dev fallback（仅 `config.test-main.json` 保留）|
+| 3 | `backend/run.ps1` 兜底 | 本地未设 env 且 config.json secret 为空时自动 export dev 密钥 + 红字警告 |
+
+**行为**：
+
+- env 非空 → 覆盖 `config.json` 任何 secret 值
+- env 空 + `config.json` 有 secret → 用 `config.json`
+- env 空 + `config.json` 空 → `panic("FATAL: JWT secret is required!")`，启动失败
+- secret 长度 < 32 → warn 日志（仍可启动，但 prod 必查）
+
+**生产部署**：
+
+```bash
+export JWT_SECRET=$(openssl rand -hex 32)
+./doc-server
+```
+
+**Docker Compose**：必须在 `.env` 文件中设置 `JWT_SECRET=xxx`，否则启动失败。
+
+### 7.5.2 JWT 升级期老 token 失效提示
+
+Phase 4a 起 access/refresh token 必须含 `iss="doc-server"`。升级瞬间所有老 token（无 iss）全部失效，用户需重新登录。运维升级前必须广播：
+
+- 升级时间窗口
+- 升级后所有用户需重新登录
+- 升级后 24 小时内 `auth.jwt.reject.invalid_issuer` 指标可能持续小量增长，属预期；如 24 小时后仍持续激增需检查前端 token 缓存策略
+
+### 7.5.3 登录失败锁定
+
+为防御密码爆破，登录失败 5 次后账号被临时锁定 15 分钟（常量定义于 [database/user.go](./backend/database/user.go) 的 `LoginMaxAttempts` / `LoginLockMinutes`）。
+
+**响应字段**（登录失败时返回，前端可读取展示）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `remaining_attempts` | int | 剩余尝试次数（含本次失败后；触发锁定时为 0）|
+| `locked_until` | int64 | 账号解锁时间（unix 秒；仅锁定状态下返回）|
+
+> 用户不存在 / 账号禁用 / 旧密码错误 5 次前的失败响应**不**返回这些字段，避免泄漏账号存在性。
+
+**监控指标**：`auth.login.locked`（账号锁定事件）、`auth.login.failed`、`auth.login.success`、`auth.login.unlocked`（从锁定恢复登录）。详见 [monitoring/alerts.yml](./backend/monitoring/alerts.yml) 的 `DocServerAccountLockoutsSpike` 告警规则。
+
+### 7.5.4 Refresh Token 轮换
+
+J.5 起刷新 token 时会**立即吊销旧 refresh token**，防止泄漏后无限续期：
+
+- `POST /api/refresh-token` 成功响应返回新的 `access_token` + `refresh_token`
+- 旧 `refresh_token` 加入黑名单（TTL = refresh token 剩余有效期）
+- 同一 `refresh_token` 第二次调用会校验失败，返 `auth.token_invalid`
+
+**前端实现要点**：每次刷新成功后立即用新 `refresh_token` 覆盖本地存储；并发请求场景需对 refresh 加锁避免重复使用。
+
+### 7.5.5 WORM 失败审计与监控
+
+Phase 1 / K.1 起，客户签名 / 三方合同上传后会调用 `services.LockOnce` 进入 WORM（Write Once Read Many）保护。LockOnce 失败时：
+
+- 上报业务事件 `worm.lock.failed`（[handlers/customer.go](./backend/handlers/customer.go) / [handlers/third_party.go](./backend/handlers/third_party.go) 调用点）
+- 写入 `audit_log`（target_type=`pdf_lock`）
+- Prometheus 告警 `DocServerWORMLockFailed`（severity=critical，单次失败即触发）
+
+**典型故障原因**：
+
+1. `uploads/worm` 目录权限不足或磁盘满
+2. 同一 snowid 重复上传（重复 LockOnce 返 `ErrAlreadyLocked`）
+3. 文件路径冲突（DB 唯一索引拒绝）
+
+排查步骤：查 `worm_record` 表 + `audit_log` pdf_lock 失败记录 + `uploads/worm` 目录磁盘 / 权限。
+
+### 7.5.6 JWT 拒绝原因细分指标
+
+K.7 起 JWT 中间件把校验失败按原因分类上报，便于运维观测升级期与攻击期 token 拒绝分布：
+
+| 指标 label | 含义 |
+|------------|------|
+| `auth.jwt.reject.no_header` | 请求未带 `Authorization` 头 |
+| `auth.jwt.reject.bad_format` | 头格式非 `Bearer <token>` |
+| `auth.jwt.reject.revoked` | token 在黑名单中（logout / refresh rotation 后旧 token 重放）|
+| `auth.jwt.reject.invalid_issuer` | iss 字段缺失或不等于 `doc-server`（Phase 4a 升级期高频）|
+| `auth.jwt.reject.other` | 其他校验失败（签名错 / 过期 / 算法错 / token type 不符）|
+
+告警规则：`DocServerJWTRejectionsSpike`（10 分钟 > 100 次任意原因）+ `DocServerJWTInvalidIssuerSpike`（10 分钟 > 50 次 iss 错误）。
+
 ---
 
 # 八、目录结构
