@@ -8,7 +8,7 @@
     "ssl_key": "./certs/private.pem"
   },
   "jwt": {
-    "secret": "6Oyh3cemeIvuEJCbfK4A2vnkP6oxbgP4",
+    "secret": "",
     "access_expire": "2h",
     "refresh_expire": "72h"
   },
