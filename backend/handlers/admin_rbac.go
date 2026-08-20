@@ -152,13 +152,21 @@ func InvalidateAllPermsCache() {
 	middleware.InvalidateAllDataScopeCache()
 }
 
-// IsRBACAdmin 提取 admin 旁路判定（hardcoded by username）
+// IsRBACAdmin 提取 admin 旁路判定。
 //
-// 2026-06-25 P2-8.1 修复：与 IsAdmin 完全等价，合并到 IsAdmin。
-// 保留此函数作为 deprecated 别名，调用点暂不强制迁移（向后兼容）。
-// 新代码请直接用 IsAdmin。
+// 🛠 BUG-2 修复（2026-08-20）：从 JWT-only `username == "admin"` 改为 DB-backed。
+//
+// 原因：admin 撤销某用户角色后，旧 JWT 在有效期内（默认 24h）仍能用。
+// 之前 `APIGateMiddleware` 用本函数判 admin 旁路，会让老 JWT 继续访问
+// 备份/审计/RBAC 管理等所有 protected 端点 → 与 Round 19 "角色变更立即生效"
+// 目标完全相反。
+//
+// 修复：内部改为调 `IsAdminUser(c)`（DB 查 users.roles）。代价是每次 +1 次
+// DB 查询；后续 BUG-6 优化可加 isAdminCache 复用 5min TTL。
+//
+// 保留函数名作为 deprecation shim，未来调用点可直接换 IsAdminUser。
 func IsRBACAdmin(c *gin.Context) bool {
-	return c.GetString("username") == "admin"
+	return IsAdminUser(c)
 }
 
 // HasPermission 单个权限码检查（对齐前端 hasPerms）
@@ -240,8 +248,12 @@ func RequireAnyPermission(c *gin.Context, codes ...string) bool {
 	return false
 }
 
-// APIGateMiddleware Gin 中间件：对每个受保护请求做 API 级权限 gate
+// APIGateMiddleware Gin 中间件：对每个受保护请求做 API 级权限 gate。
 // 用法：protected.Use(middleware.JWTAuth(jwt)); protected.Use(handlers.APIGateMiddleware())
+//
+// 🛠 BUG-2 修复（2026-08-20）：admin 旁路判定从 IsRBACAdmin（JWT-only）改为
+// IsAdminUser（DB-backed）。否则 admin 撤销角色后老 JWT 仍能跑所有
+// protected 端点。
 func APIGateMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		username := c.GetString("username")
@@ -249,7 +261,7 @@ func APIGateMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if IsRBACAdmin(c) {
+		if IsAdminUser(c) { // 🛠 BUG-2 修复：原来是 IsRBACAdmin(c)
 			c.Next()
 			return
 		}
