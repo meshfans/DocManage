@@ -1,6 +1,12 @@
 global:
   scrape_interval: 15s
 
+# Phase 5a (High #9)：告警规则挂载。
+# alerts.yml 与 prometheus.yml 同目录，被 docker-compose 挂载到 /etc/prometheus/alerts.yml。
+# Prometheus 启动时自动加载 rule_files 下的所有 *.yml。
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   - job_name: doc-server
     metrics_path: /metrics
