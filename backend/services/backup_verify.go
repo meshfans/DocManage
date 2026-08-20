@@ -279,7 +279,7 @@ func (v *BackupVerifier) VerifyAll() ([]*VerifyResult, error) {
 		case "ok":
 			okCount++
 			// Round 16 业务事件埋点：备份验证通过。
-			utils.IncBusinessEvent("backup.verify.ok")
+			PublishEvent("backup.verify.ok")
 			// Issue M-7：verify.ok 不再写 audit——全量扫描每日 03:00 跑，
 			// 1000 条历史备份每天都会产生 1000 行 audit_log，导致 SM3 链校验
 			// 与 ListAudit 性能雪崩。corrupted/missing 仍然写（取证需要）。
@@ -289,7 +289,7 @@ func (v *BackupVerifier) VerifyAll() ([]*VerifyResult, error) {
 				firstErr = errors.New(r.Error)
 			}
 			// Round 16 业务事件埋点：备份验证发现损坏。
-			utils.IncBusinessEvent("backup.verify.corrupted")
+			PublishEvent("backup.verify.corrupted")
 			// Issue #14 + M-9：审计留痕（损坏事件对取证至关重要），actorIP
 			// 填 "verify_daily" 让 hash 链不会因 actorIP='' 被攻击者伪造。
 			database.RecordAuditStandalone(0, database.AuditTargetBackup, m.ID, "verify.corrupted",
@@ -300,7 +300,7 @@ func (v *BackupVerifier) VerifyAll() ([]*VerifyResult, error) {
 				firstErr = errors.New(r.Error)
 			}
 			// Round 16 业务事件埋点：备份验证发现文件丢失。
-			utils.IncBusinessEvent("backup.verify.missing")
+			PublishEvent("backup.verify.missing")
 			// Issue #14 + M-9：审计留痕。
 			database.RecordAuditStandalone(0, database.AuditTargetBackup, m.ID, "verify.missing",
 				"", "verify_daily", gin.H{"snowid": m.SnowID, "err": r.Error})

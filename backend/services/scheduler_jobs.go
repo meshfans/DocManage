@@ -68,11 +68,11 @@ func makeBackupJobHandler() JobFunc {
 		manifestID, err := bs.performBackup(false, 0) // isManual=false（定时任务调度），actor=system
 		if err != nil {
 			// Round 16 业务事件埋点：定时调度全量备份失败（与 scheduled_task.run.* 并列通道）。
-			utils.IncBusinessEvent("backup.scheduled.failed")
+			PublishEvent("backup.scheduled.failed")
 			return "", fmt.Errorf("备份失败: %w", err)
 		}
 		// Round 16 业务事件埋点：定时调度全量备份成功（与 scheduled_task.run.* 并列通道）。
-		utils.IncBusinessEvent("backup.scheduled.success")
+		PublishEvent("backup.scheduled.success")
 		return fmt.Sprintf("备份完成 dir=%s days_to_keep=%d manifest_id=%d",
 			bs.cfg.Dir, bs.cfg.DaysToKeep, manifestID), nil
 	}
@@ -105,11 +105,11 @@ func makeIncrementalBackupJobHandler(cfg *config.Config) JobFunc {
 		manifestID, err := svc.Run()
 		if err != nil {
 			// Round 16 业务事件埋点：定时调度增量备份失败（与 scheduled_task.run.* 并列通道）。
-			utils.IncBusinessEvent("backup.scheduled.failed")
+			PublishEvent("backup.scheduled.failed")
 			return "", fmt.Errorf("增量备份失败: %w", err)
 		}
 		// Round 16 业务事件埋点：定时调度增量备份成功（与 scheduled_task.run.* 并列通道）。
-		utils.IncBusinessEvent("backup.scheduled.success")
+		PublishEvent("backup.scheduled.success")
 		return fmt.Sprintf("增量备份完成 manifest_id=%d", manifestID), nil
 	}
 }

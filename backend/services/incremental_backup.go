@@ -357,10 +357,10 @@ func (s *IncrementalBackupService) runAutoFullBackup() error {
 	// Issue #9：自动全量基线是定时任务入口的成功/失败路径，
 	// 应与 scheduler_jobs.go 一样上报 backup.scheduled.{success,failed}。
 	if err != nil {
-		utils.IncBusinessEvent("backup.scheduled.failed")
+		PublishEvent("backup.scheduled.failed")
 		return fmt.Errorf("自动全量执行失败: %w", err)
 	}
-	utils.IncBusinessEvent("backup.scheduled.success")
+	PublishEvent("backup.scheduled.success")
 	return nil
 }
 

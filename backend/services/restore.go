@@ -124,18 +124,18 @@ func (s *RestoreService) Run(req RestoreRequest, operatorActorID int64) (result 
 		if req.DryRun {
 			if err != nil {
 				auditAction = "restore.failed"
-				utils.IncBusinessEvent("backup.restore.failed")
+				PublishEvent("backup.restore.failed")
 			} else {
 				auditAction = "restore.dry_run"
-				utils.IncBusinessEvent("backup.restore.dry_run")
+				PublishEvent("backup.restore.dry_run")
 			}
 		} else {
 			if err != nil {
 				auditAction = "restore.failed"
-				utils.IncBusinessEvent("backup.restore.failed")
+				PublishEvent("backup.restore.failed")
 			} else {
 				auditAction = "restore.success"
-				utils.IncBusinessEvent("backup.restore.success")
+				PublishEvent("backup.restore.success")
 			}
 		}
 		// Issue C-4：service 层统一写 audit，handler 端不再重复 RecordAudit。
@@ -153,8 +153,11 @@ func (s *RestoreService) Run(req RestoreRequest, operatorActorID int64) (result 
 		if err != nil {
 			detail["reason"] = reason
 		}
+		// Issue M-9 / Round 19 #5：actorIP / userAgent 至少填入节点标识，
+		// 让 service 层 audit 在 hash 链中具备可识别性，避免被攻击者用空串伪造。
+		// 之前传空串 → 恢复审计行 actorIP="" 无法区分"哪一类调用方"。
 		database.RecordAuditStandalone(operatorActorID, database.AuditTargetBackup, req.FullBackupID,
-			auditAction, "", "scheduler", detail)
+			auditAction, "restore_service", "restore_handler", detail)
 	}()
 	result = &RestoreResult{DryRun: req.DryRun}
 

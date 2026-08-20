@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
 )
 
@@ -288,6 +289,9 @@ func (s *Scheduler) RemoveTask(taskID int64) {
 }
 
 // RunNow 立即触发一次（异步执行，立即返回 logID 给前端）。
+//
+// Round 19 #4：手动触发也写 audit_log（admin "立即执行"是高敏感操作，需留痕）。
+// 走 standalone helper（无 gin.Context），actorIP / userAgent 填入节点标识便于追踪。
 func (s *Scheduler) RunNow(taskID int64, operatorID int64) (int64, error) {
 	t, err := database.GetScheduledTaskByID(taskID)
 	if err != nil {
@@ -300,6 +304,14 @@ func (s *Scheduler) RunNow(taskID int64, operatorID int64) (int64, error) {
 	if timeout <= 0 {
 		timeout = time.Hour
 	}
+	// 审计：admin 手动触发 → target_type=scheduled_task, action="run_now"。
+	// 独立写（不阻塞异步 executeOnce），用 standalone helper 避免 gin.Context 依赖。
+	database.RecordAuditStandalone(operatorID, database.AuditTargetScheduledTask, t.ID,
+		"run_now", "scheduler_service", "manual_trigger", gin.H{
+			"task_key":    t.TaskKey,
+			"handler":     t.HandlerName,
+			"timeout_sec": t.TimeoutSeconds,
+		})
 	go s.executeOnce(t.ID, t.TaskKey, t.HandlerName, t.HandlerParams, timeout, t.IsConcurrent, "manual", operatorID)
 	return t.ID, nil
 }
@@ -357,7 +369,7 @@ func (s *Scheduler) executeOnce(taskID int64, taskKey, handlerName string, param
 				Error:       "上次执行尚未结束，已跳过本次触发",
 			})
 			// Round 16 业务事件埋点：防重入跳过的明确结果。
-			utils.IncBusinessEvent("scheduled_task.run.skipped")
+			PublishEvent("scheduled_task.run.skipped")
 			return
 		}
 		// 标记占用
@@ -468,13 +480,13 @@ func (s *Scheduler) executeOnce(taskID int64, taskKey, handlerName string, param
 	// Round 16 业务事件埋点：在 status 汇合点上报一次业务事件（不改变 scheduled_task_log 状态）。
 	switch status {
 	case "success":
-		utils.IncBusinessEvent("scheduled_task.run.success")
+		PublishEvent("scheduled_task.run.success")
 	case "failed":
-		utils.IncBusinessEvent("scheduled_task.run.failed")
+		PublishEvent("scheduled_task.run.failed")
 	case "timeout":
-		utils.IncBusinessEvent("scheduled_task.run.timeout")
+		PublishEvent("scheduled_task.run.timeout")
 	case "skipped":
-		utils.IncBusinessEvent("scheduled_task.run.skipped")
+		PublishEvent("scheduled_task.run.skipped")
 	}
 
 	utils.Info("任务 [%s] 执行完成 status=%s duration=%dms", taskKey, status, finishedAtMs-startedAtMs)
