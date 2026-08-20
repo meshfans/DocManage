@@ -50,7 +50,21 @@ type UserToken struct {
 }
 
 type RefreshTokenRequest struct {
-	RefreshToken string `json:"refreshToken" binding:"required"`
+	// 🛠 BUG-3 修复（2026-08-20）：JSON tag 改为 snake_case。
+	//
+	// 之前用驼峰 `refreshToken`：
+	//   - 与项目其他 snake_case 字段（old_password / new_password / smoke_audit_fix.ps1
+	//     中 refresh_token）不一致
+	//   - 让 smoke 脚本（08-19 起就有）永远 400 "Invalid request body"
+	//   - 任何按老 API 文档用蛇形的客户端必失败
+	//
+	// 修复：tag 改 `refresh_token`，与 utils/errors.go 的 CodeAuthRefreshExpired、
+	// audit action "refresh.success/failed" 等命名风格统一。
+	//
+	// 注意：响应 UserToken.RefreshToken 仍输出 `refreshToken`（驼峰，前端
+	// store 用 `data.refreshToken` 取），与请求体命名不对称是历史遗留，
+	// 暂不破坏前端解析。
+	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
 type RefreshTokenResponse struct {
