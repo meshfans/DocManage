@@ -117,6 +117,7 @@ type JWTConfig struct {
 
 type DatabaseConfig struct {
 	Path              string `json:"path"`
+	Mode              string `json:"mode"`
 	JournalMode       string `json:"journal_mode"`
 	Synchronous       string `json:"synchronous"`
 	CacheSize         int    `json:"cache_size"`
@@ -162,7 +163,23 @@ type ConfigFile struct {
 }
 
 func (h *SystemHandler) GetConfigFile(c *gin.Context) {
-	cfg := config.GlobalConfig
+	// 2026-08-20：不再从 config.GlobalConfig 读（进程内值会被环境变量覆盖，
+	// 如 JWT_SECRET / SERVER_HOST / DB_PATH / UPLOAD_DIR）。
+	// 「配置文件」tab 的语义是"展示和编辑磁盘上的 JSON 文件内容"，
+	// 应直接读磁盘，env 覆盖值通过单独的"运行时配置"视图展示（如有）。
+	// 否则前端会看到 env 兜底值（如 dev_only_local_secret_at_least_32_chars）
+	// 而不是 config.json 实际写的 jwt.secret，编辑保存后文件内容也对不上。
+	configFile := config.GetConfigFilePath()
+	var cfg config.Config
+	if data, err := os.ReadFile(configFile); err == nil {
+		if jerr := json.Unmarshal(data, &cfg); jerr != nil {
+			utils.Error(c, http.StatusInternalServerError, "解析配置文件失败: "+jerr.Error())
+			return
+		}
+	} else {
+		utils.Error(c, http.StatusInternalServerError, "读取配置文件失败: "+err.Error())
+		return
+	}
 
 	result := ConfigFile{
 		Description: "测试环境配置，源码环境使用",
@@ -262,11 +279,12 @@ func (h *SystemHandler) SaveConfigFile(c *gin.Context) {
 }
 
 // GetClientInfo 客户端信息（IP 等）。
-// 用途：摄像头水印需要显示 IP 时的来源。
+// 用途：摄像头水印需要显示 IP 时的来源；前端根据 experience_mode 显示体验横幅。
 // 注：本地 DocClient 通过 127.0.0.1 代理访问时，本接口返回 127.0.0.1（与审计日志一致）。
 func (h *SystemHandler) GetClientInfo(c *gin.Context) {
 	utils.Success(c, gin.H{
-		"ip": c.ClientIP(),
+		"ip":              c.ClientIP(),
+		"experience_mode": config.IsExperienceMode(),
 	})
 }
 

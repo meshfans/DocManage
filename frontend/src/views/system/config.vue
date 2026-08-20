@@ -148,7 +148,7 @@ const configFile = ref({
     ssl_key: "./certs/private.pem"
   },
   jwt: { secret: "", access_expire: "24h", refresh_expire: "168h" },
-  database: { path: "./bin/data/doc.db" },
+  database: { path: "./bin/data/doc.db", mode: "" },
   cors: { allowed_origins: ["*"] },
   upload: { dir: "./bin/uploads/", max_size: 10485760 },
   log: { dir: "./bin/logs", level: "info", days_to_keep: 90, enabled: true },
@@ -550,6 +550,34 @@ onMounted(() => {
             <el-form-item label="数据库路径"
               ><el-input v-model="configFile.database.path"
             /></el-form-item>
+            <el-form-item label="运行模式">
+              <el-select v-model="configFile.database.mode" placeholder="正常模式">
+                <el-option label="正常（空/development/test/production）" value="" />
+                <el-option
+                  label="体验模式（experience，只读，拦截业务写请求）"
+                  value="experience"
+                >
+                  <span style="float: left">体验模式</span>
+                  <span
+                    style="
+                      float: right;
+                      color: #e6a23c;
+                      font-size: 12px;
+                      font-weight: 600;
+                    "
+                    >experience</span
+                  >
+                </el-option>
+              </el-select>
+              <div class="form-tip">
+                <el-tag v-if="configFile.database.mode === 'experience'" type="warning" size="small"
+                  >体验模式：所有业务写操作会被后端拦截返回 423，前端顶部出现横幅</el-tag
+                >
+                <span v-else style="color: #909399">
+                  环境变量 <code>DB_MODE</code> 非空时覆盖文件此项配置（env 优先）。
+                </span>
+              </div>
+            </el-form-item>
             <el-divider content-position="left">上传配置</el-divider>
             <el-form-item label="上传目录"
               ><el-input v-model="configFile.upload.dir"

@@ -41,6 +41,8 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *hand
 	router.Use(middleware.CORS())
 	// 维护模式拦截（最后注册，最高优先级）
 	router.Use(middleware.Maintenance())
+	// 体验模式拦截：database.mode=="experience" 时业务写操作返回 423
+	router.Use(middleware.ExperienceReadOnly())
 
 	// 健康探针必须最先注册，保证即便后续路由加载（web.GetFS）失败，
 	// liveness / readiness / metrics 也能被探针访问。

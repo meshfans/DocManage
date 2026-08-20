@@ -71,7 +71,8 @@ export const useAppStore = defineStore("pure-app", {
     viewportSize: {
       width: document.documentElement.clientWidth,
       height: document.documentElement.clientHeight
-    }
+    },
+    isExperienceMode: false
   }),
   getters: {
     getSidebarStatus(state) {
@@ -119,6 +120,22 @@ export const useAppStore = defineStore("pure-app", {
     },
     setViewportSize(size) {
       this.viewportSize = size;
+    },
+    async loadExperienceMode() {
+      try {
+        const res = await fetch("/api/license/client-info", { credentials: "same-origin" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.success && data?.data?.experience_mode === true) {
+            this.isExperienceMode = true;
+          } else {
+            this.isExperienceMode = false;
+          }
+        }
+      } catch {
+        // 端点不可达（404 / 启动早期）默认 false，非体验模式
+        this.isExperienceMode = false;
+      }
     }
   }
 });

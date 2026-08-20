@@ -53,6 +53,12 @@ type JWTConfig struct {
 type DatabaseConfig struct {
 	Path string `json:"path"`
 
+	// Mode 控制业务写入行为。允许值：
+	//   - "" / "development" / "test" / "production": 正常模式
+	//   - "experience": 体验模式（ExperienceReadOnly 中间件拦截业务写请求，返回 423）
+	// 未知值触发 warn 日志但不中断启动（向后兼容）。
+	Mode string `json:"mode"`
+
 	// JournalMode: WAL / DELETE / TRUNCATE / MEMORY / OFF，默认 DELETE。
 	JournalMode string `json:"journal_mode"`
 
@@ -174,6 +180,10 @@ func applyEnvOverrides(config *Config) {
 		config.Database.Path = dbPath
 	}
 
+	if dbMode := getEnv("DB_MODE", ""); dbMode != "" {
+		config.Database.Mode = dbMode
+	}
+
 	if uploadDir := getEnv("UPLOAD_DIR", ""); uploadDir != "" {
 		config.Upload.Dir = uploadDir
 	}
@@ -182,6 +192,11 @@ func applyEnvOverrides(config *Config) {
 }
 
 func validateConfig(config *Config) {
+	if !isValidDatabaseMode(config.Database.Mode) {
+		utils.Warn("[config] 未知 database.mode=%q（允许值: %s），按正常模式继续运行",
+			config.Database.Mode, strings.Join(validDatabaseModes(), ", "))
+	}
+
 	if config.Server.Host == "" {
 		config.Server.Host = "0.0.0.0"
 	}
@@ -365,6 +380,36 @@ func (c *Config) IsPathAllowed(filePath string) bool {
 func IsPathTraversal(filePath string) bool {
 	cleanPath := filepath.Clean(filePath)
 	return strings.Contains(cleanPath, "..")
+}
+
+// IsExperienceMode 查询是否处于「体验模式」（database.mode == "experience"）。
+//
+// 体验模式：所有业务写请求被 ExperienceReadOnly 中间件拦截（返回 423），
+// 但登录、登出、刷新 token、审计 share 页面等白名单路径正常。
+// 用于对外演示 / 售前试用，数据不会被改动。
+//
+// 返回 false 当 GlobalConfig 未初始化，保证 nil-safe。
+func IsExperienceMode() bool {
+	return GlobalConfig != nil && GlobalConfig.Database.Mode == "experience"
+}
+
+// validDatabaseModes 返回 database.mode 允许值集合。
+//
+//   - "" / "development" / "test" / "production": 正常模式
+//   - "experience": 体验模式（中间件拦截业务写入）
+//
+// 保持为函数而非包级变量，便于测试与热更新扩展。
+func validDatabaseModes() []string {
+	return []string{"", "development", "test", "experience", "production"}
+}
+
+func isValidDatabaseMode(mode string) bool {
+	for _, m := range validDatabaseModes() {
+		if mode == m {
+			return true
+		}
+	}
+	return false
 }
 
 // IsMaintenanceMode 查询当前是否处于维护模式（第四阶段 P0）。

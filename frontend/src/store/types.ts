@@ -20,6 +20,9 @@ export type appType = {
   layout: string;
   device: string;
   viewportSize: { width: number; height: number };
+  // 体验模式（database.mode == "experience"）：后端拦截写请求，前端显示横幅、禁用提交按钮。
+  // 登录成功后从 GET /api/license/client-info 加载。
+  isExperienceMode: boolean;
 };
 
 export type multiType = {

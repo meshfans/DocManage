@@ -71,17 +71,27 @@ export const useUserStore = defineStore("pure-user", {
       this.loginDay = Number(value);
     },
     /** 登入 */
-    async loginByUsername(data) {
-      return new Promise<UserResult>((resolve, reject) => {
-        getLogin(data)
-          .then(data => {
-            if (data?.success) setToken(data.data);
-            resolve(data);
-          })
-          .catch(error => {
-            reject(error);
-          });
-      });
+    async loginByUsername(credentials) {
+      try {
+        const res = await getLogin(credentials);
+        if (res?.success) {
+          setToken(res.data);
+          // 2026-08-20 自愈：登录成功后强制从 /api/user/info 重新拉取权威
+          // roles/permissions/permissionVersion 并同步 store + localStorage。
+          // 背景：login 响应里虽然带了 permissions，但若浏览器 localStorage
+          // 残留了之前 dirty 的 user-info（升级 / 角色变更 / 缓存漂移等场景），
+          // 新标签页 store 初始化时会从 localStorage 反查旧值，导致"0/4 空模块"。
+          // 多打一次 user/info 代价极小（约 30ms），换来自愈能力，不必再让用户手动清缓存。
+          try {
+            await this.refreshFromApi();
+          } catch (e) {
+            console.debug("[user store] post-login refreshFromApi failed", e);
+          }
+        }
+        return res;
+      } catch (error) {
+        throw error;
+      }
     },
     /** 前端登出（不调用接口） */
     logOut() {

@@ -409,7 +409,17 @@ function formatTime(ts: number | null | undefined) {
   )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 2026-08-20 自愈：若本地 permissions 是空（如 localStorage 残留 dirty 数据），
+  // 强制从 /api/user/info 拉取权威值再渲染模块，避免「当前账号未分配业务模块权限」空态。
+  // 触发后 visibleModules 会被 computed 重新计算，自动显示 4/4。
+  if (userStore.permissions.length === 0) {
+    try {
+      await userStore.refreshFromApi();
+    } catch (e) {
+      console.debug("[welcome] refreshFromApi failed", e);
+    }
+  }
   loadStats();
 });
 </script>

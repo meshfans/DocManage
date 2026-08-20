@@ -38,6 +38,8 @@ const { layout } = useLayout();
 const isMobile = deviceDetection();
 const pureSetting = useSettingStoreHook();
 const { $storage } = useGlobal<GlobalPropertiesApi>();
+const appStore = useAppStoreHook();
+const isExperienceMode = computed(() => appStore.isExperienceMode);
 
 const set: setType = reactive({
   sidebar: computed(() => {
@@ -154,6 +156,8 @@ onMounted(() => {
   if (isMobile) {
     toggle("mobile", false);
   }
+  // 体验模式横幅：启动时读一次（database.mode 是进程级配置，不常改）
+  appStore.loadExperienceMode();
 });
 
 onBeforeMount(() => {
@@ -194,6 +198,14 @@ const LayHeader = defineComponent({
 
 <template>
   <div ref="appWrapperRef" :class="['app-wrapper', set.classes]">
+    <el-alert
+      v-if="isExperienceMode"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="experience-banner"
+      title="当前为体验模式（database.mode = experience）—— 业务数据禁止修改，演示结束后所有变更不会保留"
+    />
     <div
       v-show="
         set.device === 'mobile' &&
@@ -238,6 +250,15 @@ const LayHeader = defineComponent({
 </template>
 
 <style lang="scss" scoped>
+.experience-banner {
+  :deep(.el-alert__title) {
+    font-size: 13px;
+  }
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
 .app-wrapper {
   position: relative;
   width: 100%;
