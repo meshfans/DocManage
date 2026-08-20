@@ -25,16 +25,26 @@ func NewReminderHandler() *ReminderHandler { return &ReminderHandler{} }
 
 // ListTemplates GET /api/reminders/templates
 // 任何登录用户可查。
+//
+// Phase 2c (High #20)：admin 看全部；非 admin 仅看 is_system=0 的自定义模板
+// （系统预置模板 is_system=1 通常包含敏感扫描规则/邮件模板正文）。
 func (h *ReminderHandler) ListTemplates(c *gin.Context) {
-	templates, err := database.ListReminderTemplates()
+	all, err := database.ListReminderTemplates()
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "查询模板失败: "+err.Error())
 		return
 	}
-	if templates == nil {
-		templates = []database.ReminderTemplate{}
+	if all == nil {
+		all = []database.ReminderTemplate{}
 	}
-	utils.Success(c, gin.H{"list": templates, "total": len(templates)})
+	isAdmin := IsAdminUser(c)
+	out := make([]database.ReminderTemplate, 0, len(all))
+	for _, t := range all {
+		if isAdmin || !t.IsSystem {
+			out = append(out, t)
+		}
+	}
+	utils.Success(c, gin.H{"list": out, "total": len(out)})
 }
 
 // CreateTemplate POST /api/reminders/templates（admin）
@@ -266,7 +276,14 @@ func (h *ReminderHandler) ListSubscriptions(c *gin.Context) {
 // body: { template_id, link_type, link_id, receiver_type?, receiver_id?, remark? }
 // 第十三阶段 v4：用 link_type + link_id（CSV）替代 customer_id + contract_id。
 // 第十三阶段 v2：receiver_id 改为 string（CSV 格式），支持多 ID。
+//
+// Phase 2c (Critical #5)：订阅可被普通用户创建任意客户 → 自身收到提醒，
+// 等同于"主动泄露任意客户的合同到期信息"。需 reminder:subscriptions:create 权限码。
 func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
+	if !RequirePermission(c, "reminder:subscriptions:create") {
+		return
+	}
+
 	var req struct {
 		TemplateID   int64  `json:"template_id"`
 		LinkType     string `json:"link_type"`     // 'customer' | 'third_party_contract'
@@ -426,6 +443,8 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 
 // UpdateSubscription POST /api/reminders/subscriptions/:id
 // body: { is_active, remark }
+//
+// Phase 2c (High #19)：admin 或 created_by 本人才可改订阅。
 func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -439,6 +458,10 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 	}
 	if old == nil {
 		utils.Error(c, http.StatusNotFound, "订阅不存在")
+		return
+	}
+	if !IsAdminUser(c) && c.GetInt64("user_id") != old.CreatedBy {
+		utils.Error(c, http.StatusForbidden, "只能修改自己创建的订阅")
 		return
 	}
 	var req struct {
@@ -465,6 +488,8 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 }
 
 // DeleteSubscription POST /api/reminders/subscriptions/:id/delete
+//
+// Phase 2c (High #19)：admin 或 created_by 本人才可删订阅。
 func (h *ReminderHandler) DeleteSubscription(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -478,6 +503,10 @@ func (h *ReminderHandler) DeleteSubscription(c *gin.Context) {
 	}
 	if old == nil {
 		utils.Error(c, http.StatusNotFound, "订阅不存在")
+		return
+	}
+	if !IsAdminUser(c) && c.GetInt64("user_id") != old.CreatedBy {
+		utils.Error(c, http.StatusForbidden, "只能删除自己创建的订阅")
 		return
 	}
 	if err := database.DeleteReminderSubscription(id); err != nil {
