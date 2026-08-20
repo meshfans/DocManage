@@ -80,6 +80,12 @@ func (h *UserExtendedHandler) GetUsers(c *gin.Context) {
 }
 
 func (h *UserExtendedHandler) CheckUsername(c *gin.Context) {
+	// Phase 2b (High #17)：CheckUsername 可被攻击者用于"用户名枚举"。
+	// 仅 admin 可调。普通用户自查自己用户名用 /api/users/me。
+	if !RequireAdmin(c) {
+		return
+	}
+
 	username := c.Query("username")
 	excludeIdStr := c.Query("exclude_id")
 
@@ -182,6 +188,18 @@ func (h *UserExtendedHandler) CreateUser(c *gin.Context) {
 }
 
 func (h *UserExtendedHandler) GetUser(c *gin.Context) {
+	// Phase 2b (Critical #3)：普通用户只能查自己的资料；admin 可查任意用户。
+	// 等价"自我资料"接口走 /api/users/me，不要在 GetUser 上放宽到 admin only。
+	if !IsAdminUser(c) {
+		currentUserID := c.GetInt64("user_id")
+		idStr := c.Param("id")
+		targetID, parseErr := strconv.ParseInt(idStr, 10, 64)
+		if parseErr == nil && targetID != currentUserID {
+			utils.Error(c, http.StatusForbidden, "普通用户只能查看自己的资料")
+			return
+		}
+	}
+
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -349,6 +367,14 @@ func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 	InvalidatePermissionVersionCache()
 	// 2026-06-28 RBAC v3：用户角色变更影响 data_scope → 清该用户缓存
 	middleware.InvalidateDataScopeCache(id)
+
+	// Round 19 #6：用户角色分配是高敏感操作，写 audit_log。
+	// target_type='rbac_user_binding'，action='assign'，detail 含 old/new roles + username。
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, id, "assign", gin.H{
+		"username":   oldUser.Username,
+		"old_roles":  oldUser.Roles, // JSON 字符串原样存
+		"new_roles":  req.Roles,
+	})
 
 	utils.Success(c, gin.H{
 		"id":    id,
