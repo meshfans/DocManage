@@ -3,23 +3,25 @@ package models
 import "time"
 
 type User struct {
-	ID             int64     `json:"id"`
-	Username       string    `json:"username"`
-	Password       string    `json:"-"`
-	Nickname       string    `json:"nickname"`
-	Avatar         string    `json:"avatar"`
-	Roles          []string  `json:"roles"`
-	Permissions    []string  `json:"permissions"`
-	RealName       string    `json:"real_name"`
-	Email          string    `json:"email"`
-	Phone          string    `json:"phone"`
-	DepartmentID   *int64    `json:"department_id"`
-	DepartmentName string    `json:"department_name,omitempty"`
-	Position       string    `json:"position"`
-	EmployeeNo     string    `json:"employee_no"`
-	Status         string    `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                int64     `json:"id"`
+	Username          string    `json:"username"`
+	Password          string    `json:"-"`
+	Nickname          string    `json:"nickname"`
+	Avatar            string    `json:"avatar"`
+	Roles             []string  `json:"roles"`
+	Permissions       []string  `json:"permissions"`
+	RealName          string    `json:"real_name"`
+	Email             string    `json:"email"`
+	Phone             string    `json:"phone"`
+	DepartmentID      *int64    `json:"department_id"`
+	DepartmentName    string    `json:"department_name,omitempty"`
+	Position          string    `json:"position"`
+	EmployeeNo        string    `json:"employee_no"`
+	Status            string    `json:"status"`
+	FailedLoginCount  int       `json:"failed_login_count,omitempty"`
+	LockedUntil       int64     `json:"locked_until,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type LoginRequest struct {
