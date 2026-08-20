@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -218,6 +216,25 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
+	// 🛠 BUG-1 修复（2026-08-20）：J.5 Refresh Token Rotation 闭环。
+	//
+	// 旧 token 在下方「成功签发新 token」后会被 RevokeToken 加入黑名单，
+	// 但旧 token 再次提交时 ValidateToken 不知道这件事（unauth 端点不走
+	// JWTAuth 中间件 = 不走 IsTokenRevoked 检查）。如果不先查黑名单，
+	// 攻击者拿到泄漏的 refresh token 后可无限续期。
+	//
+	// 修复：在 ValidateToken 之前先 IsTokenRevoked；命中黑名单 → 401
+	// (auth.token_revoked) + 写 audit + 发布 auth.refresh.failed 事件。
+	if req.RefreshToken != "" && utils.IsTokenRevoked(req.RefreshToken) {
+		// 注意：actor_user_id 未知（unauth 端点），detail 用 token 指纹而非明文。
+		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "refresh.failed", gin.H{
+			"reason":         "rotated_or_revoked",
+			"token_sha256_6": utils.TokenFingerprint(req.RefreshToken),
+		})
+		utils.Err(c, utils.CodeAuthTokenRevoked, "refresh token 已失效（已被轮换或吊销）")
+		return
+	}
+
 	claims, err := h.jwtUtils.ValidateToken(req.RefreshToken)
 	if err != nil {
 		utils.Info("Refresh token validation failed: %v\n", err)
@@ -248,17 +265,24 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	// J.5：Refresh Token Rotation（refresh handler 入口已校验旧 token 有效）。
-	// 成功签发新 token 后，立即吊销旧 refresh token（防泄漏后无限续期）。
-	if req.RefreshToken != "" {
-		utils.RevokeToken(req.RefreshToken, time.Now().Add(h.jwtUtils.GetRefreshExpire()).Unix())
-	}
-
+	// 🛠 BUG-1 修复（2026-08-20）：J.5 Refresh Token Rotation — 调整顺序。
+	//
+	// 旧顺序：RevokeToken(old) → Generate(new)。若 Generate 失败 → 旧 token
+	// 已被吊销 → 用户被迫重新登录。颠倒后保证旧 token 在成功路径才失效。
+	//
+	// 新顺序：先 Generate(new) 成功 → 再 RevokeToken(old)。
+	// 配合入口的 IsTokenRevoked 检查，攻击者拿旧 token 来 refresh 必 401。
 	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(claims.UserID, claims.Username)
 	if err != nil {
 		utils.Info("Failed to generate refresh token: %v\n", err)
 		utils.Error(c, 500, "Failed to generate token")
 		return
+	}
+
+	// 关键：成功签发后立即把旧 refresh token 加入黑名单。
+	// 下一次有人拿旧 token 来 refresh → 上面 BUG-1 修复块命中黑名单 → 401。
+	if req.RefreshToken != "" {
+		utils.RevokeToken(req.RefreshToken, time.Now().Add(h.jwtUtils.GetRefreshExpire()).Unix())
 	}
 
 	expires := accessExpires.UnixNano() / 1000000
@@ -377,6 +401,10 @@ func classifyToken(header string) string {
 
 // tokenFingerprint 返回 token 的 sha256 前 6 字节（hex 12 字符）作为不可逆指纹。
 // 同一 token 多次吊销能 dedupe，但无法从指纹还原 token 内容。
+//
+// 🛠 BUG-1 修复（2026-08-20）：改为委派 utils.TokenFingerprint，避免重复实现。
+// utils.TokenFingerprint 直接吃 raw token 字符串；这里负责从 Authorization
+// header 里剥 "Bearer " 前缀（与 classifyToken 行为对齐）。
 func tokenFingerprint(header string) string {
 	const prefix = "Bearer "
 	if !strings.HasPrefix(header, prefix) {
@@ -386,8 +414,7 @@ func tokenFingerprint(header string) string {
 	if tok == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(tok))
-	return hex.EncodeToString(sum[:6])
+	return utils.TokenFingerprint(tok)
 }
 
 // ChangePassword 修改当前登录用户的密码。

@@ -97,3 +97,15 @@ func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
+
+// TokenFingerprint 返回 token 的 SHA-256 前 6 字节（hex 12 字符）作为不可逆指纹。
+//
+// 用途：审计日志 / debug 日志中关联 token 又不暴露凭据片段。
+//   - 同一 token 多次出现能 dedupe
+//   - 无法从指纹还原 token 内容
+//
+// 🛠 BUG-1 修复（2026-08-20）：把 auth.go 内联的 tokenFingerprint 提到
+// utils 包作为公开 API，避免 handler/service 各自实现一遍。
+func TokenFingerprint(token string) string {
+	return hashToken(token)[:12]
+}
