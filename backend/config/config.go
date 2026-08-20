@@ -38,6 +38,8 @@ type ServerConfig struct {
 	EnableSSL bool   `json:"enable_ssl"`
 	SSLCert   string `json:"ssl_cert"`
 	SSLKey    string `json:"ssl_key"`
+	// Debug 启用后挂载 /debug/pprof/*（Phase 5b High #16）。生产默认 false。
+	Debug bool `json:"debug"`
 }
 
 type JWTConfig struct {

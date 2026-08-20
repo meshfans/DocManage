@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"strings"
 	"time"
 
@@ -49,6 +50,13 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *hand
 	registerAPIRoutes(router, jwtUtils, cfg)
 	registerWebSocketRoutes(router, jwtUtils, wsHandler)
 	registerWebRoutes(router, cfg)
+
+	// Phase 5b (High #16)：Debug 模式才挂载 pprof。
+	// 通过 server.json server.debug=true 启用，生产默认 false 不暴露 /debug/pprof/*。
+	if cfg.Server.Debug {
+		registerPprofRoutes(router)
+		utils.Info("[pprof] 已挂载 /debug/pprof/* （Debug 模式）")
+	}
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 
@@ -277,6 +285,21 @@ func registerHealthRoutes(router *gin.Engine, wsHandler *handlers.WebSocketHandl
 	// Round 16：/metrics 改为依赖版工厂，启动时把 wsHub / sched 注入，
 	// 每次请求前一次性刷新 runtime / DB / WS / Scheduler 四类指标。
 	router.GET("/metrics", handlers.MetricsHandlerWithDependencies(wsHandler, sched))
+}
+
+// registerPprofRoutes Phase 5b (High #16)：仅 Debug=true 时挂载 pprof，
+// 用于生产环境 CPU / 内存 / goroutine dump 分析。
+//
+// 注意：pprof handler 注册到独立 ServeMux，再用 gin.WrapH 包装，避免
+// 与现有 JWTAuth / Metrics / RequestLogger 中间件产生干扰。
+func registerPprofRoutes(router *gin.Engine) {
+	pprofMux := http.NewServeMux()
+	pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
+	pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	router.Any("/debug/pprof/*action", gin.WrapH(pprofMux))
 }
 
 // registerWebRoutes 注册前端静态资源、index.html、platform-config.json 等路由。
