@@ -244,6 +244,32 @@ func Err(c *gin.Context, code ErrCode, message string, detail ...error) {
 	})
 }
 
+// ErrWithExtras 在 utils.Err 响应包络基础上追加额外字段。
+//
+// L.4 新增：登录失败响应需要带 remaining_attempts / locked_until 给前端展示
+// 剩余尝试次数与解锁时间，但 utils.Err 签名固定不能塞业务字段。
+// extras 中的 key/value 会合并到响应根级（与 code/message 同层），覆盖同名默认键。
+//
+// 兼容：未传 extras（nil 或空 map）时响应与 utils.Err 完全一致。
+func ErrWithExtras(c *gin.Context, code ErrCode, message string, extras gin.H, detail ...error) {
+	var d string
+	if len(detail) > 0 && detail[0] != nil {
+		d = detail[0].Error()
+	}
+	status := httpStatusFor(code)
+	resp := gin.H{
+		"success": false,
+		"message": message,
+		"error":   d,
+		"code":    string(code),
+		"detail":  d,
+	}
+	for k, v := range extras {
+		resp[k] = v
+	}
+	c.JSON(status, resp)
+}
+
 // ErrInternal 简化调用：code 必传；message 缺省时用 code 字符串。
 func ErrInternal(c *gin.Context, code ErrCode, detail ...error) {
 	msg := string(code)

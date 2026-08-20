@@ -71,7 +71,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		})
 		// K.6：埋业务事件（供 Prometheus 告警检测 brute force）
 		services.PublishEvent("auth.login.locked")
-		utils.Err(c, utils.CodeAuthUserDisabled, "账号因登录失败次数过多被临时锁定，请稍后再试")
+		// L.4：返回 locked_until（unix 秒），前端可显示"账号 X 分钟后解锁"。
+		utils.ErrWithExtras(c, utils.CodeAuthUserDisabled,
+			"账号因登录失败次数过多被临时锁定，请稍后再试",
+			gin.H{"locked_until": user.LockedUntil})
 		return
 	}
 
@@ -100,7 +103,22 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				services.PublishEvent("auth.login.locked")
 			}
 		}
-		utils.Err(c, utils.CodeAuthInvalidCredentials, "用户名或密码错误")
+		// L.4：返回 remaining_attempts（含本次失败后剩余次数，>=0）；
+		// 触发锁定时同步返回 locked_until（本次 LockUser 写入的截止时间）。
+		extras := gin.H{}
+		if incErr == nil {
+			remaining := database.LoginMaxAttempts - count
+			if remaining < 0 {
+				remaining = 0
+			}
+			extras["remaining_attempts"] = remaining
+			if count >= database.LoginMaxAttempts {
+				// LockUser 已执行（lockErr == nil 路径），locked_until = now + LoginLockMinutes。
+				// 不直接读 DB 避免 extra 查询；与 LockUser 内部计算保持一致。
+				extras["locked_until"] = time.Now().Add(time.Duration(database.LoginLockMinutes) * time.Minute).Unix()
+			}
+		}
+		utils.ErrWithExtras(c, utils.CodeAuthInvalidCredentials, "用户名或密码错误", extras)
 		return
 	}
 
