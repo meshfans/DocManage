@@ -184,7 +184,9 @@ func httpStatusFor(code ErrCode) int {
 		CodeMediaNotFound, CodeMediaCorrupted, CodeSignatureNotFound,
 		CodeSealNotFound, CodeThirdPartyNotFound,
 		CodeBackupNotFound, CodeAuditReconcileEmpty,
-		CodeRBACRoleNotFound, CodeRBACPermissionNotFound:
+		CodeRBACRoleNotFound, CodeRBACPermissionNotFound,
+		// Phase 3c 补全（reminder 模块）
+		CodeReminderTemplateNotFound, CodeReminderSubscriptionNotFound:
 		return http.StatusNotFound
 	case CodeConflict, CodeCustomerExists,
 		CodeRBACRoleExists, CodeRBACPermissionExists:

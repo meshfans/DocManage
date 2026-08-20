@@ -32,6 +32,9 @@ func TestErr_StatusMapping(t *testing.T) {
 		{CodeNotFound, http.StatusNotFound},
 		{CodeCustomerNotFound, http.StatusNotFound},
 		{CodeBackupNotFound, http.StatusNotFound},
+		// reminder 模块（Phase 3c 新增）
+		{CodeReminderTemplateNotFound, http.StatusNotFound},
+		{CodeReminderSubscriptionNotFound, http.StatusNotFound},
 		// 409
 		{CodeCustomerExists, http.StatusConflict},
 		// 410
