@@ -51,7 +51,7 @@ func (h *DepartmentHandler) GetDepartment(c *gin.Context) {
 
 	dept, err := database.GetDepartmentByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "部门不存在")
+		utils.Err(c, utils.CodeNotFound, "部门不存在")
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *DepartmentHandler) GetDepartment(c *gin.Context) {
 
 func (h *DepartmentHandler) CreateDepartment(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -99,7 +99,7 @@ func (h *DepartmentHandler) CreateDepartment(c *gin.Context) {
 
 func (h *DepartmentHandler) UpdateDepartment(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *DepartmentHandler) UpdateDepartment(c *gin.Context) {
 	maxLevel := services.GetMaxDepartmentLevel()
 	err = database.UpdateDepartment(id, req.Name, req.ParentID, req.SortOrder, req.Status, maxLevel)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
+		utils.Err(c, utils.CodeInternal, err.Error())
 		return
 	}
 	// 2026-06-29 RBAC v3 P5：部门 parent_id / status 变更影响 SubDeptIDs，
@@ -146,7 +146,7 @@ func (h *DepartmentHandler) UpdateDepartment(c *gin.Context) {
 
 func (h *DepartmentHandler) DeleteDepartment(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -159,27 +159,27 @@ func (h *DepartmentHandler) DeleteDepartment(c *gin.Context) {
 
 	childCount, err := database.CountDepartmentChildren(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "检查子部门失败")
+		utils.Err(c, utils.CodeInternal, "检查子部门失败")
 		return
 	}
 	if childCount > 0 {
-		utils.Error(c, http.StatusBadRequest, "无法删除部门，该部门还有子部门")
+		utils.Err(c, utils.CodeInvalidParam, "无法删除部门，该部门还有子部门")
 		return
 	}
 
 	userCount, err := database.CountDepartmentUsers(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "检查部门用户失败")
+		utils.Err(c, utils.CodeInternal, "检查部门用户失败")
 		return
 	}
 	if userCount > 0 {
-		utils.Error(c, http.StatusBadRequest, "无法删除部门，该部门还有用户")
+		utils.Err(c, utils.CodeInvalidParam, "无法删除部门，该部门还有用户")
 		return
 	}
 
 	err = database.DeleteDepartment(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
+		utils.Err(c, utils.CodeInternal, err.Error())
 		return
 	}
 
@@ -203,7 +203,7 @@ func (h *DepartmentHandler) GetDepartmentUsers(c *gin.Context) {
 
 	users, err := database.GetUsersByDepartment(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取部门用户失败")
+		utils.Err(c, utils.CodeInternal, "获取部门用户失败")
 		return
 	}
 

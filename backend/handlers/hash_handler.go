@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -148,19 +147,19 @@ func CalculateHash(c *gin.Context) {
 	}
 	var req HashCalculateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 
 	filePath, err := resolveMediaPath(c, req.SnowID, req.Kind)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 
 	hash, err := hashService.CalculateFileDualHash(filePath)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "计算哈希失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "计算哈希失败: "+err.Error())
 		return
 	}
 
@@ -188,20 +187,20 @@ func VerifyHash(c *gin.Context) {
 	}
 	var req HashVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 
 	filePath, err := resolveMediaPath(c, req.SnowID, req.Kind)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 
 	// 先算一遍哈希（用于响应里返回"当前值"），再调 VerifyFileHash 校验
 	hash, err := hashService.CalculateFileDualHash(filePath)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "计算哈希失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "计算哈希失败: "+err.Error())
 		return
 	}
 	valid, message, err := hashService.VerifyFileHash(filePath, &services.DualHash{
@@ -210,7 +209,7 @@ func VerifyHash(c *gin.Context) {
 		CombinedHash: req.CombinedHash,
 	})
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "验证哈希失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "验证哈希失败: "+err.Error())
 		return
 	}
 
@@ -230,7 +229,7 @@ func VerifyHash(c *gin.Context) {
 	if valid {
 		utils.Success(c, gin.H{"valid": valid, "message": "验证通过", "data": response})
 	} else {
-		utils.Error(c, http.StatusBadRequest, message)
+		utils.Err(c, utils.CodeInvalidParam, message)
 		utils.Success(c, gin.H{"valid": valid, "message": message, "data": response})
 	}
 }

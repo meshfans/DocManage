@@ -201,7 +201,7 @@ func (h *MessageHandler) GetMessage(c *gin.Context) {
 	}
 	
 	if msg.UserID != userID {
-		utils.Error(c, http.StatusForbidden, "无权访问此消息")
+		utils.Err(c, utils.CodeForbidden, "无权访问此消息")
 		return
 	}
 	

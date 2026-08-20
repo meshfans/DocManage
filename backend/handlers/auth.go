@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -154,14 +153,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	accessToken, accessExpires, err := h.jwtUtils.GenerateAccessToken(user.ID, user.Username)
 	if err != nil {
 		utils.Info("Failed to generate access token: %v\n", err)
-		utils.Error(c, 500, "Failed to generate token")
+		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
 
 	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(user.ID, user.Username)
 	if err != nil {
 		utils.Info("Failed to generate refresh token: %v\n", err)
-		utils.Error(c, 500, "Failed to generate token")
+		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
 
@@ -261,7 +260,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	accessToken, accessExpires, err := h.jwtUtils.GenerateAccessToken(claims.UserID, claims.Username)
 	if err != nil {
 		utils.Info("Failed to generate access token: %v\n", err)
-		utils.Error(c, 500, "Failed to generate token")
+		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
 
@@ -275,7 +274,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(claims.UserID, claims.Username)
 	if err != nil {
 		utils.Info("Failed to generate refresh token: %v\n", err)
-		utils.Error(c, 500, "Failed to generate token")
+		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
 
@@ -508,27 +507,28 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	// 2026-07-04：注册端点暂不开放（公网部署防滥用 + 后台手工建账号更可控）
-	utils.Error(c, http.StatusForbidden, "注册功能暂未开放，请联系管理员创建账号")
+	utils.Err(c, utils.CodeForbidden, "注册功能暂未开放，请联系管理员创建账号")
 }
 
+// IsAdminUser 判断当前用户是否为 admin。
+//
+// 🛠 P1 BUG-6 修复（2026-08-20）：复用 GetEffectivePermissionsCached 缓存，
+// 不再每请求额外查一次 DB（IsAdminUser 在 APIGateMiddleware 中被频繁调用）。
+// GetEffectivePermissionsCached 内部已走 permsCache（5min TTL），省掉一次 DB。
 func IsAdminUser(c *gin.Context) bool {
 	username := c.GetString("username")
 	if username == "" {
 		return false
 	}
 
-	user, err := database.GetUserByUsername(username)
-	if err != nil {
+	perms, err := GetEffectivePermissionsCached(username)
+	if err != nil || perms == nil {
 		return false
 	}
 
-	var roles []string
-	if err := json.Unmarshal([]byte(user.Roles), &roles); err != nil {
-		return false
-	}
-
-	for _, role := range roles {
-		if role == "admin" {
+	// admin 角色命中条件：持有通配符权限 *:* 或 roles 含 "admin"
+	for _, p := range perms {
+		if p == "*:*" || p == "admin" {
 			return true
 		}
 	}

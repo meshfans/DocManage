@@ -28,7 +28,7 @@ func NewScheduledTaskHandler() *ScheduledTaskHandler {
 func (h *ScheduledTaskHandler) ListTasks(c *gin.Context) {
 	tasks, err := database.GetAllScheduledTasks()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取任务列表失败")
+		utils.Err(c, utils.CodeInternal, "获取任务列表失败")
 		return
 	}
 	if tasks == nil {
@@ -85,7 +85,7 @@ func (h *ScheduledTaskHandler) GetTask(c *gin.Context) {
 // CreateTask 新建业务任务（不允许创建 built_in）
 func (h *ScheduledTaskHandler) CreateTask(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 	var req struct {
@@ -135,7 +135,7 @@ func (h *ScheduledTaskHandler) CreateTask(c *gin.Context) {
 
 	// 唯一性
 	if existing, _ := database.GetScheduledTaskByKey(req.TaskKey); existing != nil {
-		utils.Error(c, http.StatusConflict, "task_key 已存在")
+		utils.Err(c, utils.CodeConflict, "task_key 已存在")
 		return
 	}
 
@@ -154,7 +154,7 @@ func (h *ScheduledTaskHandler) CreateTask(c *gin.Context) {
 	}
 	id, err := database.CreateScheduledTask(t)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "创建任务失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "创建任务失败: "+err.Error())
 		return
 	}
 	t.ID = id
@@ -172,7 +172,7 @@ func (h *ScheduledTaskHandler) CreateTask(c *gin.Context) {
 // UpdateTask 更新任务（内置任务只允许改 is_active、description、timeout_seconds）
 func (h *ScheduledTaskHandler) UpdateTask(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -182,7 +182,7 @@ func (h *ScheduledTaskHandler) UpdateTask(c *gin.Context) {
 	}
 	existing, err := database.GetScheduledTaskByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "任务不存在")
+		utils.Err(c, utils.CodeNotFound, "任务不存在")
 		return
 	}
 	// 快照原值（用于审计对比；必须 DB 更新前复制，否则 DB 已是新值，审计写不进去）
@@ -207,7 +207,7 @@ func (h *ScheduledTaskHandler) UpdateTask(c *gin.Context) {
 	// 保留限制：内置任务的 handler_name 不允许改（避免破坏系统语义）
 	isBuiltIn := existing.TaskType == "built_in"
 	if isBuiltIn && req.HandlerName != nil && *req.HandlerName != existing.HandlerName {
-		utils.Error(c, http.StatusForbidden, "内置任务的 handler 不允许修改；如需自定义处理逻辑，请新建业务任务")
+		utils.Err(c, utils.CodeForbidden, "内置任务的 handler 不允许修改；如需自定义处理逻辑，请新建业务任务")
 		return
 	}
 
@@ -257,7 +257,7 @@ func (h *ScheduledTaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	if err := database.UpdateScheduledTask(existing); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新任务失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新任务失败: "+err.Error())
 		return
 	}
 
@@ -282,7 +282,7 @@ func (h *ScheduledTaskHandler) UpdateTask(c *gin.Context) {
 // ToggleTask 启停
 func (h *ScheduledTaskHandler) ToggleTask(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -292,12 +292,12 @@ func (h *ScheduledTaskHandler) ToggleTask(c *gin.Context) {
 	}
 	t, err := database.GetScheduledTaskByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "任务不存在")
+		utils.Err(c, utils.CodeNotFound, "任务不存在")
 		return
 	}
 	newActive := !t.IsActive
 	if err := database.UpdateScheduledTaskActive(id, newActive); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新任务状态失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新任务状态失败: "+err.Error())
 		return
 	}
 	t.IsActive = newActive
@@ -329,7 +329,7 @@ func (h *ScheduledTaskHandler) ToggleTask(c *gin.Context) {
 // DeleteTask 删除（仅业务任务）
 func (h *ScheduledTaskHandler) DeleteTask(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -339,15 +339,15 @@ func (h *ScheduledTaskHandler) DeleteTask(c *gin.Context) {
 	}
 	t, err := database.GetScheduledTaskByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "任务不存在")
+		utils.Err(c, utils.CodeNotFound, "任务不存在")
 		return
 	}
 	if t.TaskType == "built_in" {
-		utils.Error(c, http.StatusForbidden, "内置任务不允许删除")
+		utils.Err(c, utils.CodeForbidden, "内置任务不允许删除")
 		return
 	}
 	if err := database.DeleteScheduledTask(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除任务失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除任务失败: "+err.Error())
 		return
 	}
 	if s := services.GetScheduler(); s != nil {
@@ -369,7 +369,7 @@ func (h *ScheduledTaskHandler) RunNow(c *gin.Context) {
 	}
 	s := services.GetScheduler()
 	if s == nil {
-		utils.Error(c, http.StatusServiceUnavailable, "调度器未启动")
+		utils.Err(c, utils.CodeMaintenance, "调度器未启动")
 		return
 	}
 	operatorID := c.GetInt64("user_id")
@@ -383,12 +383,12 @@ func (h *ScheduledTaskHandler) RunNow(c *gin.Context) {
 // ListHandlers 可注册的 handler 列表
 func (h *ScheduledTaskHandler) ListHandlers(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 	s := services.GetScheduler()
 	if s == nil {
-		utils.Error(c, http.StatusServiceUnavailable, "调度器未启动，无法列出可用 Handler")
+		utils.Err(c, utils.CodeMaintenance, "调度器未启动，无法列出可用 Handler")
 		return
 	}
 	utils.Success(c, s.ListHandlers())

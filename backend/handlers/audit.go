@@ -67,7 +67,7 @@ func (h *AuditHandler) ListAudit(c *gin.Context) {
 
 	list, total, err := database.ListAudit(targetType, targetID, actorID, action, fromTs, toTs, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询审计失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询审计失败: "+err.Error())
 		return
 	}
 

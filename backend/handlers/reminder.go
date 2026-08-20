@@ -53,7 +53,7 @@ func (h *ReminderHandler) ListTemplates(c *gin.Context) {
 // 确保 gate 立即反映角色变更。
 func (h *ReminderHandler) CreateTemplate(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "仅 admin 可创建模板")
+		utils.Err(c, utils.CodeForbidden, "仅 admin 可创建模板")
 		return
 	}
 	var req struct {
@@ -104,7 +104,7 @@ func (h *ReminderHandler) CreateTemplate(c *gin.Context) {
 	}
 	id, err := database.CreateReminderTemplate(t)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "创建失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "创建失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"id": id})
@@ -153,9 +153,6 @@ func (h *ReminderHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
-	_ = old.Name
-	_ = old.IsActive
-	_ = old.AdvanceDays
 	old.SortOrder = req.SortOrder
 	old.Name = req.Name
 	old.Description = req.Description
@@ -163,7 +160,7 @@ func (h *ReminderHandler) UpdateTemplate(c *gin.Context) {
 	old.AdvanceDays = req.AdvanceDays
 	old.IsActive = req.IsActive
 	if err := database.UpdateReminderTemplate(old); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"message": "已更新"})
@@ -173,7 +170,7 @@ func (h *ReminderHandler) UpdateTemplate(c *gin.Context) {
 // 2026-06-25 P0-6.1 修复：见 CreateTemplate 注释。
 func (h *ReminderHandler) DeleteTemplate(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "仅 admin 可删除模板")
+		utils.Err(c, utils.CodeForbidden, "仅 admin 可删除模板")
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -183,7 +180,7 @@ func (h *ReminderHandler) DeleteTemplate(c *gin.Context) {
 	}
 	old, err := database.GetReminderTemplateByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if old == nil {
@@ -191,17 +188,17 @@ func (h *ReminderHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 	if old.IsSystem {
-		utils.Error(c, http.StatusForbidden, "系统预置模板不可删除")
+		utils.Err(c, utils.CodeForbidden, "系统预置模板不可删除")
 		return
 	}
 	// 检查是否有 active 订阅
 	count, _ := database.CountActiveSubscriptionsByTemplate(id)
 	if count > 0 {
-		utils.Error(c, http.StatusConflict, "该模板下还有启用中的订阅，请先删除/停用订阅")
+		utils.Err(c, utils.CodeConflict, "该模板下还有启用中的订阅，请先删除/停用订阅")
 		return
 	}
 	if err := database.DeleteReminderTemplate(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"message": "已删除"})
@@ -303,7 +300,7 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 	// 验证模板存在
 	tpl, err := database.GetReminderTemplateByID(req.TemplateID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询模板失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询模板失败: "+err.Error())
 		return
 	}
 	if tpl == nil {
@@ -435,7 +432,7 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 	sub.DepartmentID = deptID
 	id, err := database.CreateReminderSubscription(sub)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "创建失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "创建失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"id": id})
@@ -472,8 +469,6 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 		utils.BadRequest(c, "无效的请求数据: "+err.Error())
 		return
 	}
-	_ = old.IsActive
-	_ = old.Remark
 	if req.IsActive != nil {
 		old.IsActive = *req.IsActive
 	}
@@ -481,7 +476,7 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 		old.Remark = req.Remark
 	}
 	if err := database.UpdateReminderSubscription(old); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"message": "已更新"})
@@ -498,7 +493,7 @@ func (h *ReminderHandler) DeleteSubscription(c *gin.Context) {
 	}
 	old, err := database.GetReminderSubscriptionByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if old == nil {
@@ -506,11 +501,11 @@ func (h *ReminderHandler) DeleteSubscription(c *gin.Context) {
 		return
 	}
 	if !IsAdminUser(c) && c.GetInt64("user_id") != old.CreatedBy {
-		utils.Error(c, http.StatusForbidden, "只能删除自己创建的订阅")
+		utils.Err(c, utils.CodeForbidden, "只能删除自己创建的订阅")
 		return
 	}
 	if err := database.DeleteReminderSubscription(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"message": "已删除"})
@@ -541,7 +536,7 @@ func (h *ReminderHandler) ListLogs(c *gin.Context) {
 	}
 	logs, total, err := database.ListReminderLogs(templateID, customerID, contractID, triggerDate, triggeredBy, status, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if logs == nil {
@@ -557,12 +552,12 @@ func (h *ReminderHandler) ListLogs(c *gin.Context) {
 // 2026-06-25 P0-6.1 修复：见 CreateTemplate 注释。
 func (h *ReminderHandler) TriggerScan(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "仅 admin 可触发扫描")
+		utils.Err(c, utils.CodeForbidden, "仅 admin 可触发扫描")
 		return
 	}
 	stats, err := services.ScanReminders("manual", c.GetInt64("user_id"))
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "扫描失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "扫描失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{

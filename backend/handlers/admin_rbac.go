@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
@@ -39,7 +38,7 @@ func RequireAdmin(c *gin.Context) bool {
 	username := c.GetString("username")
 	utils.LogError("[RBAC] 非 admin 用户尝试调用受限 API: username=%s, path=%s, ip=%s",
 		username, c.Request.URL.Path, c.ClientIP())
-	utils.Error(c, http.StatusForbidden, "仅管理员可调用此 API")
+	utils.Err(c, utils.CodeForbidden, "仅管理员可调用此 API")
 	return false
 }
 
@@ -233,7 +232,7 @@ func RequirePermission(c *gin.Context, requiredCode string) bool {
 	if p, _ := database.GetPermissionByCode(requiredCode); p != nil {
 		name = p.Name
 	}
-	utils.Error(c, http.StatusForbidden, "权限不足: 需要 "+name)
+	utils.Err(c, utils.CodeForbidden, "权限不足: 需要 "+name)
 	return false
 }
 
@@ -244,7 +243,7 @@ func RequireAnyPermission(c *gin.Context, codes ...string) bool {
 	}
 	utils.LogError("[RBAC] 权限不足: username=%s, need_any=%v, path=%s",
 		c.GetString("username"), codes, c.Request.URL.Path)
-	utils.Error(c, http.StatusForbidden, "权限不足")
+	utils.Err(c, utils.CodeForbidden, "权限不足")
 	return false
 }
 
@@ -282,7 +281,7 @@ func APIGateMiddleware() gin.HandlerFunc {
 
 		utils.LogError("[RBAC] API gate 拒绝: username=%s, method=%s, path=%s, need_any=%v",
 			username, method, path, requiredCodes)
-		utils.Error(c, http.StatusForbidden, "权限不足")
+		utils.Err(c, utils.CodeForbidden, "权限不足")
 		c.Abort()
 	}
 }

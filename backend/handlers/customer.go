@@ -58,7 +58,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 	deptID, _ := database.GetUserMainDepartment(ownerUserID)
 	id, err := database.CreateCustomerV3(snowid, req.RealName, req.Phone, req.IDCard, req.Address, req.Email, req.Gender, req.BirthDate, req.Remarks, ownerUserID, deptID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "创建客户失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "创建客户失败: "+err.Error())
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *CustomerHandler) GetCustomerList(c *gin.Context) {
 	//   - 非 admin 持有 customer:list 权限码 → 进入 handler，scope != "all" → data_scope 过滤
 	//   - 无权限用户 → APIGateMiddleware 已 403，到不了这里
 	if !IsAdminUser(c) && !HasPermission(c, "customer:list") {
-		utils.Error(c, http.StatusForbidden, "需要管理员或 customer:list 权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员或 customer:list 权限")
 		return
 	}
 
@@ -126,13 +126,13 @@ func (h *CustomerHandler) GetCustomerList(c *gin.Context) {
 			DeptCol:  "department_id",
 		})
 		if werr != nil {
-			utils.Error(c, http.StatusInternalServerError, "data_scope 过滤失败: "+werr.Error())
+			utils.Err(c, utils.CodeInternal, "data_scope 过滤失败: "+werr.Error())
 			return
 		}
 		customers, total, err = database.ListCustomersByDataScope(pageInt, pageSizeInt, keyword, whereSQL, args)
 	}
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取客户列表失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "获取客户列表失败: "+err.Error())
 		return
 	}
 
@@ -176,7 +176,7 @@ func (h *CustomerHandler) GetCustomerByID(c *gin.Context) {
 	// 非 admin 用户走 data_scope 二次校验
 	if !IsAdminUser(c) {
 		if !customerDataScopeAllows(c, customer.OwnerUserID, customer.DepartmentID) {
-			utils.Error(c, http.StatusForbidden, "无权查看此客户")
+			utils.Err(c, utils.CodeForbidden, "无权查看此客户")
 			return
 		}
 	}
@@ -258,7 +258,7 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 			utils.Err(c, utils.CodeCustomerHasContracts, err.Error())
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, "删除客户失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除客户失败: "+err.Error())
 		return
 	}
 
@@ -292,12 +292,12 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	// 防护目标：恶意 100MB base64 → OOM / DB 撑爆。
 	const maxSignatureBase64Len = 5 * 1024 * 1024
 	if len(req.Signature) > maxSignatureBase64Len {
-		utils.Error(c, http.StatusRequestEntityTooLarge,
+		utils.Err(c, utils.CodeMediaTooLarge,
 			fmt.Sprintf("签名图过大（base64 > %dMB）", maxSignatureBase64Len/1024/1024))
 		return
 	}
 	if len(req.Date) > maxSignatureBase64Len {
-		utils.Error(c, http.StatusRequestEntityTooLarge,
+		utils.Err(c, utils.CodeMediaTooLarge,
 			fmt.Sprintf("日期图过大（base64 > %dMB）", maxSignatureBase64Len/1024/1024))
 		return
 	}
@@ -330,7 +330,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	yearMonth := now.Format("200601")
 	signDir := filepath.Join(h.cfg.Upload.Dir, "sign", yearMonth)
 	if err := os.MkdirAll(signDir, 0755); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "创建目录失败")
+		utils.Err(c, utils.CodeInternal, "创建目录失败")
 		return
 	}
 
@@ -363,7 +363,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	recordID = signatureID
 	if err != nil {
 		utils.Info("[签署] 创建签名记录失败: snowid=%s, customerID=%d, err=%v", snowid, req.CustomerID, err)
-		utils.Error(c, http.StatusInternalServerError, "创建签名记录失败")
+		utils.Err(c, utils.CodeInternal, "创建签名记录失败")
 		return
 	}
 
@@ -456,19 +456,19 @@ func (h *CustomerHandler) GetSignature(c *gin.Context) {
 	if custErr == nil && customer != nil && !IsAdminUser(c) {
 		currentUserID := c.GetInt64("user_id")
 		if customer.OwnerUserID != currentUserID {
-			utils.Error(c, http.StatusForbidden, "无权访问该签名")
+			utils.Err(c, utils.CodeForbidden, "无权访问该签名")
 			return
 		}
 	}
 
 	absPath, err := filepath.Abs(record.FilePath)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "文件路径错误")
+		utils.Err(c, utils.CodeInternal, "文件路径错误")
 		return
 	}
 
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		utils.Error(c, http.StatusNotFound, "签名文件不存在")
+		utils.Err(c, utils.CodeSignatureNotFound, "签名文件不存在")
 		return
 	}
 
@@ -533,10 +533,10 @@ func (h *CustomerHandler) CreateCustomerExt(c *gin.Context) {
 	if err != nil {
 		// 部分唯一索引冲突：统一社会信用代码已存在
 		if isUniqueConstraintError(err, "idx_customer_uscc") {
-			utils.Error(c, http.StatusConflict, "该统一社会信用代码已存在")
+			utils.Err(c, utils.CodeCustomerExists, "该统一社会信用代码已存在")
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, "创建客户失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "创建客户失败: "+err.Error())
 		return
 	}
 
@@ -595,10 +595,10 @@ func (h *CustomerHandler) UpdateCustomerExt(c *gin.Context) {
 
 	if err := database.UpdateCustomerExt(req.ID, &req.CustomerInput); err != nil {
 		if isUniqueConstraintError(err, "idx_customer_uscc") {
-			utils.Error(c, http.StatusConflict, "该统一社会信用代码已存在")
+			utils.Err(c, utils.CodeCustomerExists, "该统一社会信用代码已存在")
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, "更新客户信息失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新客户信息失败: "+err.Error())
 		return
 	}
 
@@ -634,7 +634,7 @@ func (h *CustomerHandler) GetCustomersByTypeList(c *gin.Context) {
 
 	customers, total, err := database.GetCustomersByType(pageInt, pageSizeInt, ctype)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取客户列表失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "获取客户列表失败: "+err.Error())
 		return
 	}
 

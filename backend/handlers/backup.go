@@ -46,7 +46,7 @@ func (h *BackupHandler) List(c *gin.Context) {
 
 	list, err := database.ListBackupManifests(typeFilter, statusFilter, pageSize, offset)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询备份列表失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询备份列表失败: "+err.Error())
 		return
 	}
 	if list == nil {
@@ -104,24 +104,24 @@ func (h *BackupHandler) Download(c *gin.Context) {
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "ID 无效")
+		utils.Err(c, utils.CodeInvalidParam, "ID 无效")
 		return
 	}
 	m, err := database.GetBackupManifestByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "备份不存在")
+		utils.Err(c, utils.CodeBackupNotFound, "备份不存在")
 		return
 	}
 	if m.FilePath == "" {
-		utils.Error(c, http.StatusNotFound, "备份文件路径为空")
+		utils.Err(c, utils.CodeBackupMissing, "备份文件路径为空")
 		return
 	}
 	if _, err := os.Stat(m.FilePath); os.IsNotExist(err) {
-		utils.Error(c, http.StatusNotFound, "备份文件已丢失")
+		utils.Err(c, utils.CodeBackupMissing, "备份文件已丢失")
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *BackupHandler) Download(c *gin.Context) {
 		if relErr != nil || (len(rel) > 0 && rel[0] == '.' && rel[1] == '.') {
 			utils.LogError("[Backup.Download] 路径越界: id=%d, path=%s, allowed=%s",
 				id, cleanPath, cleanPrefix)
-			utils.Error(c, http.StatusForbidden, "备份文件路径异常，禁止下载")
+			utils.Err(c, utils.CodeForbidden, "备份文件路径异常，禁止下载")
 			return
 		}
 	}
@@ -160,16 +160,16 @@ func (h *BackupHandler) Delete(c *gin.Context) {
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "ID 无效")
+		utils.Err(c, utils.CodeInvalidParam, "ID 无效")
 		return
 	}
 	m, err := database.GetBackupManifestByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "备份不存在")
+		utils.Err(c, utils.CodeBackupNotFound, "备份不存在")
 		return
 	}
 
@@ -177,7 +177,7 @@ func (h *BackupHandler) Delete(c *gin.Context) {
 	if m.Type == database.BackupTypeFull {
 		liveChildren, _ := database.CountLiveChildrenByParent(m.ID, time.Now().Unix())
 		if liveChildren > 0 {
-			utils.Error(c, http.StatusConflict,
+			utils.Err(c, utils.CodeConflict,
 				fmt.Sprintf("该全量备份有 %d 个活跃子增量，请先删除子增量", liveChildren))
 			return
 		}
@@ -186,12 +186,12 @@ func (h *BackupHandler) Delete(c *gin.Context) {
 	// 删文件（best-effort，文件丢失也允许清理 DB 记录）
 	if m.FilePath != "" {
 		if err := os.Remove(m.FilePath); err != nil && !os.IsNotExist(err) {
-			utils.Error(c, http.StatusInternalServerError, "删除文件失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "删除文件失败: "+err.Error())
 			return
 		}
 	}
 	if err := database.DeleteBackupManifest(m.ID); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除记录失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除记录失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"deleted": true})

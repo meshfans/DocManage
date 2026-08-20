@@ -84,7 +84,7 @@ func (h *SystemHandler) SetConfig(c *gin.Context) {
 
 	err := database.SetMultipleSystemConfig(configs)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "保存配置失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "保存配置失败: "+err.Error())
 		return
 	}
 
@@ -263,13 +263,13 @@ func (h *SystemHandler) SaveConfigFile(c *gin.Context) {
 	configFile := config.GetConfigFilePath()
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "序列化配置失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "序列化配置失败: "+err.Error())
 		return
 	}
 
 	err = os.WriteFile(configFile, data, 0644)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "写入配置文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "写入配置文件失败: "+err.Error())
 		return
 	}
 
@@ -335,11 +335,11 @@ func (h *SystemHandler) RestoreFromBackup(c *gin.Context) {
 	}
 	var req services.RestoreRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, 400, "请求参数无效: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "请求参数无效: "+err.Error())
 		return
 	}
 	if req.FullBackupID <= 0 {
-		utils.Error(c, 400, "full_backup_id 必填")
+		utils.Err(c, utils.CodeInvalidParam, "full_backup_id 必填")
 		return
 	}
 
@@ -400,7 +400,7 @@ func (h *SystemHandler) SetMaintenanceMode(c *gin.Context) {
 	}
 	var req SetMaintenanceModeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, 400, "请求参数无效: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "请求参数无效: "+err.Error())
 		return
 	}
 

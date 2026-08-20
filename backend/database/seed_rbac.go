@@ -243,12 +243,6 @@ func buildPermissionSeeds() []permSeed {
 		p("customer:list-by-type", "按类型查客户", "customer", "/api/customer/list-by-type", "GET"),
 		p("customer:search-by-type", "按类型搜索客户", "customer", "/api/customer/search-by-type", "GET"),
 
-		// === form field ===
-		p("formfield:list", "表单字段列表", "formfield", "/api/templates/fields", "GET"),
-		p("formfield:create", "创建表单字段", "formfield", "/api/templates/create-field", "POST"),
-		p("formfield:update", "更新表单字段", "formfield", "/api/fields/update", "POST"),
-		p("formfield:delete", "删除表单字段", "formfield", "/api/fields/delete", "POST"),
-
 		// === message ===
 		p("message:list", "消息列表", "message", "/api/messages/list", "GET"),
 		p("message:unread-count", "未读数", "message", "/api/messages/unread-count", "GET"),

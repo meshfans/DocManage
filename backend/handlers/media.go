@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -128,13 +126,13 @@ func (h *MediaHandler) List(c *gin.Context) {
 			DeptCol:  "department_id",
 		})
 		if werr != nil {
-			utils.Error(c, http.StatusInternalServerError, "data_scope 过滤失败: "+werr.Error())
+			utils.Err(c, utils.CodeInternal, "data_scope 过滤失败: "+werr.Error())
 			return
 		}
 		list, total, err = database.ListMediaByDataScope(filter, page, pageSize, whereSQL, args)
 	}
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{
@@ -159,7 +157,7 @@ func (h *MediaHandler) ListByTarget(c *gin.Context) {
 	}
 	list, err := database.ListMediaByTarget(targetType, targetID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	// data_scope 过滤：admin 看全部；非 admin 仅看本人上传
@@ -259,7 +257,7 @@ func (h *MediaHandler) Create(c *gin.Context) {
 	}
 	id, err := database.CreateMedia(m)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "入库失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "入库失败: "+err.Error())
 		return
 	}
 	// 审计双写（JSON 缓存 + 哈希链）
@@ -335,7 +333,7 @@ func (h *MediaHandler) Update(c *gin.Context) {
 	}
 
 	if err := database.UpdateMediaMeta(id, name, remark, status, customerID, userID, req.Tags, req.Bindings); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新失败: "+err.Error())
 		return
 	}
 	// 审计双写（JSON 缓存 + 哈希链）
@@ -354,19 +352,19 @@ func (h *MediaHandler) Delete(c *gin.Context) {
 	}
 	m, err := database.GetMediaByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "媒体不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体不存在")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权删除")
+		utils.Err(c, utils.CodeForbidden, "无权删除")
 		return
 	}
 	if err := database.DeleteMedia(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除失败: "+err.Error())
 		return
 	}
 	// 审计双写
@@ -421,7 +419,7 @@ func (h *MediaHandler) ListAllTags(c *gin.Context) {
 	}
 	tags, err := database.ListAllTagNames()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"tags": tags})
@@ -453,7 +451,7 @@ func (h *MediaHandler) BulkAddTag(c *gin.Context) {
 	for _, id := range req.IDs {
 		m, err := database.GetMediaByID(id)
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 			return
 		}
 		if m == nil {
@@ -461,13 +459,13 @@ func (h *MediaHandler) BulkAddTag(c *gin.Context) {
 			return
 		}
 		if !isAdmin && m.TakenBy != 0 && m.TakenBy != currentUserID {
-			utils.Error(c, http.StatusForbidden, "无权修改 id="+strconv.FormatInt(id, 10))
+			utils.Err(c, utils.CodeForbidden, "无权修改 id="+strconv.FormatInt(id, 10))
 			return
 		}
 	}
 	added, err := database.BulkAddTag(req.IDs, req.TagName, req.Color, currentUserID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "批量打 tag 失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "批量打 tag 失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{
@@ -500,20 +498,20 @@ func (h *MediaHandler) BulkDelete(c *gin.Context) {
 	for _, id := range req.IDs {
 		m, err := database.GetMediaByID(id)
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 			return
 		}
 		if m == nil {
 			continue // 已删项跳过
 		}
 		if !isAdmin && m.TakenBy != 0 && m.TakenBy != currentUserID {
-			utils.Error(c, http.StatusForbidden, "无权删除 id="+strconv.FormatInt(id, 10))
+			utils.Err(c, utils.CodeForbidden, "无权删除 id="+strconv.FormatInt(id, 10))
 			return
 		}
 	}
 	deleted, err := database.BulkDeleteMedia(req.IDs, currentUserID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "批量删除失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "批量删除失败: "+err.Error())
 		return
 	}
 	// 审计双写（每条媒体一条 bulk-delete 记录）
@@ -551,7 +549,7 @@ func (h *MediaHandler) BulkSetCustomer(c *gin.Context) {
 	if req.CustomerID > 0 {
 		exists, err := database.CustomerExists(req.CustomerID)
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "客户存在性校验失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "客户存在性校验失败: "+err.Error())
 			return
 		}
 		if !exists {
@@ -564,20 +562,20 @@ func (h *MediaHandler) BulkSetCustomer(c *gin.Context) {
 	for _, id := range req.IDs {
 		m, err := database.GetMediaByID(id)
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 			return
 		}
 		if m == nil {
 			continue
 		}
 		if !isAdmin && m.TakenBy != 0 && m.TakenBy != currentUserID {
-			utils.Error(c, http.StatusForbidden, "无权修改 id="+strconv.FormatInt(id, 10))
+			utils.Err(c, utils.CodeForbidden, "无权修改 id="+strconv.FormatInt(id, 10))
 			return
 		}
 	}
 	updated, err := database.BulkSetCustomer(req.IDs, req.CustomerID, currentUserID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "批量关联客户失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "批量关联客户失败: "+err.Error())
 		return
 	}
 	// 审计双写（每条媒体一条 bulk-customer 记录）
@@ -611,15 +609,15 @@ func (h *MediaHandler) Download(c *gin.Context) {
 	// 已删媒体也能预览 / 下载（数据库行没被物理删除）。
 	m, err := database.GetMediaByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "媒体不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体不存在")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权下载")
+		utils.Err(c, utils.CodeForbidden, "无权下载")
 		return
 	}
 	storage := services.GetMediaStorage()
@@ -627,11 +625,11 @@ func (h *MediaHandler) Download(c *gin.Context) {
 	if pathErr != nil {
 		// P0 修复（2026-06-28）：路径非法 → 404 不暴露内部细节
 		utils.Warn("[Media.Download] 路径非法 media_id=%d: %v", id, pathErr)
-		utils.Error(c, http.StatusNotFound, "文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "文件不存在")
 		return
 	}
 	if _, err := os.Stat(absPath); err != nil {
-		utils.Error(c, http.StatusNotFound, "文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "文件不存在")
 		return
 	}
 
@@ -662,19 +660,19 @@ func (h *MediaHandler) Thumbnail(c *gin.Context) {
 	// 已删媒体的缩略图也能预览（之前显示 404）。
 	m, err := database.GetMediaByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "媒体不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体不存在")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权查看")
+		utils.Err(c, utils.CodeForbidden, "无权查看")
 		return
 	}
 	if m.ThumbPath == "" {
-		utils.Error(c, http.StatusNotFound, "无缩略图")
+		utils.Err(c, utils.CodeMediaNotFound, "无缩略图")
 		return
 	}
 	storage := services.GetMediaStorage()
@@ -682,11 +680,11 @@ func (h *MediaHandler) Thumbnail(c *gin.Context) {
 	if err != nil {
 		// P0 修复（2026-06-28）：路径非法 → 404 不暴露内部细节
 		utils.Warn("[Media.Thumbnail] 路径非法 media_id=%d: %v", id, err)
-		utils.Error(c, http.StatusNotFound, "缩略图文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "缩略图文件不存在")
 		return
 	}
 	if _, err := os.Stat(absPath); err != nil {
-		utils.Error(c, http.StatusNotFound, "缩略图文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "缩略图文件不存在")
 		return
 	}
 	c.Header("Content-Type", "image/jpeg")
@@ -739,13 +737,13 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	// 1. 读取字节（也可走流式，但 CalculateDualHash 需要 []byte）
 	f, err := file.Open()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "打开上传文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "打开上传文件失败: "+err.Error())
 		return
 	}
 	defer f.Close()
 	data, err := io.ReadAll(f)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "读取文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "读取文件失败: "+err.Error())
 		return
 	}
 
@@ -753,14 +751,14 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	hashService := services.NewHashService(true, true)
 	hash, err := hashService.CalculateDualHash(data)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "计算哈希失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "计算哈希失败: "+err.Error())
 		return
 	}
 
 	// 3. 查重（按 SHA-256 索引）
 	existing, err := database.GetMediaByHash(hash.SHA256Hash)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查重失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查重失败: "+err.Error())
 		return
 	}
 	if existing != nil {
@@ -864,7 +862,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	if customerID > 0 {
 		exists, err := database.CustomerExists(customerID)
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "客户存在性校验失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "客户存在性校验失败: "+err.Error())
 			return
 		}
 		if !exists {
@@ -934,7 +932,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	if err != nil {
 		// 入库失败：清理已写文件
 		_ = storage.DeleteFiles(res.RelPath, thumbPath)
-		utils.Error(c, http.StatusInternalServerError, "入库失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "入库失败: "+err.Error())
 		return
 	}
 	// 审计双写：按 source 区分 action
@@ -1002,15 +1000,15 @@ func (h *MediaHandler) Verify(c *gin.Context) {
 	}
 	m, err := database.GetMediaByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "媒体不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体不存在")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权校验")
+		utils.Err(c, utils.CodeForbidden, "无权校验")
 		return
 	}
 	storage := services.GetMediaStorage()
@@ -1018,18 +1016,18 @@ func (h *MediaHandler) Verify(c *gin.Context) {
 	if pathErr != nil {
 		// P0 修复（2026-06-28）：路径非法 → 404 不暴露内部细节
 		utils.Warn("[Media.Verify] 路径非法 media_id=%d: %v", id, pathErr)
-		utils.Error(c, http.StatusNotFound, "媒体文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体文件不存在")
 		return
 	}
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "读取文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "读取文件失败: "+err.Error())
 		return
 	}
 	// 重新算（不依赖入库值）
 	current, err := services.NewHashService(true, true).CalculateDualHash(data)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "哈希计算失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "哈希计算失败: "+err.Error())
 		return
 	}
 	sm3Match := current.SM3Hash == m.HashSM3
@@ -1083,7 +1081,4 @@ func isImageExtStr(ext string) bool {
 	return false
 }
 
-// ==================== 防止 lint 误报 ====================
-var _ = fmt.Sprintf
-var _ = sha256.Sum256
-var _ = hex.EncodeToString
+

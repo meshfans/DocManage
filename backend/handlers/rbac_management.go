@@ -43,7 +43,7 @@ func (h *RBACManagementHandler) ListRoles(c *gin.Context) {
 	}
 	roles, err := database.GetAllRoles()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询角色失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询角色失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"list": roles, "total": len(roles)})
