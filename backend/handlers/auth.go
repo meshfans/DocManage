@@ -10,6 +10,7 @@ import (
 
 	"doc/database"
 	"doc/models"
+	"doc/services"
 	"doc/utils"
 
 	"github.com/gin-gonic/gin"
@@ -35,9 +36,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 		// Round 16 业务事件埋点：登录成功/失败（低风险稳定事件，按 HTTP 状态分流）。
 		if c.Writer.Status() == http.StatusOK {
-			utils.IncBusinessEvent("auth.login.success")
+			services.PublishEvent("auth.login.success")
 		} else {
-			utils.IncBusinessEvent("auth.login.failed")
+			services.PublishEvent("auth.login.failed")
 		}
 	}()
 
@@ -55,7 +56,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"username": req.Username,
 			"reason":   "user_not_found",
 		})
-		utils.Unauthorized(c, "用户名或密码错误")
+		utils.Err(c, utils.CodeAuthInvalidCredentials, "用户名或密码错误")
 		return
 	}
 
@@ -66,7 +67,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"username": req.Username,
 			"reason":   "wrong_password",
 		})
-		utils.Unauthorized(c, "用户名或密码错误")
+		utils.Err(c, utils.CodeAuthInvalidCredentials, "用户名或密码错误")
 		return
 	}
 
@@ -81,7 +82,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"reason":   "account_disabled",
 			"status":   user.Status,
 		})
-		utils.Unauthorized(c, "账号已被禁用，请联系管理员")
+		utils.Err(c, utils.CodeAuthUserDisabled, "账号已被禁用，请联系管理员")
 		return
 	}
 
@@ -137,9 +138,9 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		}
 		// Round 16 业务事件埋点：refresh 成功/失败（按 HTTP 状态分流，覆盖所有 return 路径）。
 		if c.Writer.Status() == http.StatusOK {
-			utils.IncBusinessEvent("auth.refresh.success")
+			services.PublishEvent("auth.refresh.success")
 		} else {
-			utils.IncBusinessEvent("auth.refresh.failed")
+			services.PublishEvent("auth.refresh.failed")
 		}
 	}()
 
@@ -157,7 +158,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			"reason": "validate_failed",
 			"err":    err.Error(),
 		})
-		utils.Unauthorized(c)
+		utils.Err(c, utils.CodeAuthTokenInvalid, "refresh token 无效")
 		return
 	}
 
@@ -168,7 +169,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			"reason":      "wrong_token_type",
 			"token_type":  claims.TokenType,
 		})
-		utils.Unauthorized(c)
+		utils.Err(c, utils.CodeAuthTokenInvalid, "refresh token 类型错误")
 		return
 	}
 
@@ -209,12 +210,12 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 
 	user, err := database.GetUserByUsername(username)
 	if err != nil {
-		utils.Unauthorized(c)
+		utils.Err(c, utils.CodeAuthTokenInvalid, "用户不存在或凭据失效")
 		return
 	}
 
 	if user.ID != userID {
-		utils.Unauthorized(c)
+		utils.Err(c, utils.CodeAuthTokenInvalid, "用户不存在或凭据失效")
 		return
 	}
 
@@ -331,10 +332,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 			c.Set("__ratelimit_result", "failure")
 		}
 		// Round 16 业务事件埋点：修改密码成功/失败（按 HTTP 状态分流，覆盖所有 return 路径）。
+		// Round 19 #1：改用 services.PublishEvent 走事件总线，便于未来接入 webhook / ws push。
 		if c.Writer.Status() == http.StatusOK {
-			utils.IncBusinessEvent("auth.password.change.success")
+			services.PublishEvent("auth.password.change.success")
 		} else {
-			utils.IncBusinessEvent("auth.password.change.failed")
+			services.PublishEvent("auth.password.change.failed")
 		}
 		// Issue #4：密码变更是 L4 取证必查项，模型字典已声明
 		// password.change.success / password.change.failed，必须留痕。
@@ -342,10 +344,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		uid := c.GetInt64("user_id")
 		uname := c.GetString("username")
 		if c.Writer.Status() == http.StatusOK {
+			services.PublishEvent("auth.password.change.success")
 			database.RecordAudit(c, database.AuditTargetAuth, uid, "password.change.success", gin.H{
 				"username": uname,
 			})
 		} else {
+			services.PublishEvent("auth.password.change.failed")
 			database.RecordAudit(c, database.AuditTargetAuth, uid, "password.change.failed", gin.H{
 				"username": uname,
 				"reason":   "see_response_body",
@@ -367,28 +371,28 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	// 1. 强度校验
 	if err := utils.ValidatePasswordStrength(req.NewPassword); err != nil {
-		utils.BadRequest(c, err.Error())
+		utils.Err(c, utils.CodeAuthPasswordWeak, err.Error())
 		return
 	}
 
 	// 2. 新旧密码不能相同
 	if req.OldPassword == req.NewPassword {
-		utils.BadRequest(c, "新密码不能与旧密码相同")
+		utils.Err(c, utils.CodeAuthPasswordReused, "新密码不能与旧密码相同")
 		return
 	}
 
 	// 3. 校验旧密码
 	user, err := database.GetUserByUsername(username)
 	if err != nil {
-		utils.Unauthorized(c)
+		utils.Err(c, utils.CodeAuthTokenInvalid, "用户不存在或凭据失效")
 		return
 	}
 	if user.ID != userID {
-		utils.Unauthorized(c)
+		utils.Err(c, utils.CodeAuthTokenInvalid, "用户不存在或凭据失效")
 		return
 	}
 	if !utils.CheckPassword(req.OldPassword, user.PasswordHash) {
-		utils.BadRequest(c, "旧密码错误")
+		utils.Err(c, utils.CodeAuthInvalidCredentials, "旧密码错误")
 		return
 	}
 
