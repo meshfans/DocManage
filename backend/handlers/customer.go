@@ -169,7 +169,7 @@ func (h *CustomerHandler) GetCustomerByID(c *gin.Context) {
 
 	customer, err := database.GetCustomerByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "客户不存在")
+		utils.Err(c, utils.CodeCustomerNotFound, "客户不存在")
 		return
 	}
 
@@ -220,7 +220,7 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 
 	err := database.UpdateCustomer(req.ID, req.RealName, req.Phone, req.IDCard, req.Address, req.Email, req.Gender, req.BirthDate, req.Remarks)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新客户信息失败")
+		utils.Err(c, utils.CodeCustomerInvalid, "更新客户信息失败")
 		return
 	}
 
@@ -255,7 +255,7 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 		// 业务约束（存在进行中合同/流转）→ 409 Conflict；
 		// DB 错误 → 500。错误信息透传给前端用于提示。
 		if errors.Is(err, database.ErrDeleteCustomerBlocked) {
-			utils.Error(c, http.StatusConflict, err.Error())
+			utils.Err(c, utils.CodeCustomerHasContracts, err.Error())
 			return
 		}
 		utils.Error(c, http.StatusInternalServerError, "删除客户失败: "+err.Error())
@@ -309,7 +309,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 
 	customer, err := database.GetCustomerByID(req.CustomerID)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "客户不存在")
+		utils.Err(c, utils.CodeCustomerNotFound, "客户不存在")
 		return
 	}
 
@@ -432,7 +432,7 @@ func (h *CustomerHandler) GetSignature(c *gin.Context) {
 
 	record, err := database.GetSignatureRecordByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "签名不存在")
+		utils.Err(c, utils.CodeSignatureNotFound, "签名不存在")
 		return
 	}
 
