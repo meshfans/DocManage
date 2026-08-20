@@ -65,3 +65,50 @@ groups:
         annotations:
           summary: "DocManage HTTP 5xx 错误率 > 1%"
           description: "请查看 /metrics 中 http_requests_total 的 status 分布。"
+
+      # 6) JWT 拒绝激增（10 分钟内任意原因 > 100）
+      # K.7 新增 reason 维度：no_header / bad_format / revoked / invalid_issuer / other。
+      # 整体计数器统一观测，便于发现"token 拒绝总量异常"先于细分维度。
+      - alert: DocServerJWTRejectionsSpike
+        expr: increase(business_events_total{event=~"auth\\.jwt\\.reject\\..*"}[10m]) > 100
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage JWT 拒绝激增（10m > 100 次）"
+          description: "请按 reason 维度细分（auth.jwt.reject.invalid_issuer / revoked / bad_format / no_header / other）排查。"
+
+      # 7) JWT iss 错误激增（Phase 4a 升级期老 token 拦截）
+      # 升级瞬间老 token 全失效为预期；如升级 24h 后仍持续激增 → 可能存在客户端缓存老 token。
+      - alert: DocServerJWTInvalidIssuerSpike
+        expr: increase(business_events_total{event="auth.jwt.reject.invalid_issuer"}[10m]) > 50
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage JWT iss 校验失败激增（10m > 50 次）"
+          description: "Phase 4a 升级期间老 token 拦截为预期；升级 24h 后仍持续请检查前端 token 缓存策略。"
+
+      # 8) 账号临时锁定激增（10 分钟内 > 5 次锁定事件）
+      # auth.login.locked 在密码错误触发 LockUser 与 LockedUntil 拦截两条路径都上报；
+      # 短时间内多个账号锁定 → 疑似撞库 / 暴力破解。
+      - alert: DocServerAccountLockoutsSpike
+        expr: increase(business_events_total{event="auth.login.locked"}[10m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DocManage 账号锁定激增（10m > 5 次）"
+          description: "可能是撞库 / 暴力破解；建议结合 audit_log login.failed 与 IP 限流计数综合排查。"
+
+      # 9) WORM 锁定失败
+      # K.1 新增：worm.lock.failed 在 customer.go / third_party.go 路径上 LockOnce 失败时上报。
+      # 单次失败即告警：WORM 锁定失败意味着文件未被持久化保护，或文件路径冲突，必须人工介入。
+      - alert: DocServerWORMLockFailed
+        expr: increase(business_events_total{event="worm.lock.failed"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DocManage WORM 文件锁定失败"
+          description: "上传文件未进入 WORM 保护，存在被篡改风险；请检查 worm_record 表 + uploads/worm 目录权限。"
