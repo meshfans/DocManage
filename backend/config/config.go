@@ -3,6 +3,7 @@ package config
 import (
 	"doc/utils"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,8 +209,13 @@ func validateConfig(config *Config) {
 		panic("FATAL: JWT secret is required! Set it in config.json or JWT_SECRET environment variable")
 	}
 
+	// J.2：secret 长度 < 32 直接 panic，不再仅 warn。
+	// 32 字符（256 bit）匹配 HS512 算法推荐最低熵（RFC 7518 §3.2）。
+	// dev 环境用 run.ps1 自带的 "dev_only_local_secret_at_least_32_chars" 兜底（34 字符），
+	// 因此正常 dev 流程不受影响。
 	if len(config.JWT.Secret) < 32 {
-		utils.Info("WARNING: JWT_SECRET is too weak! Please use at least 32 characters")
+		panic(fmt.Sprintf("FATAL: JWT_SECRET too short (len=%d, min=32). "+
+			"Generate with: openssl rand -hex 32", len(config.JWT.Secret)))
 	}
 
 	if config.JWT.AccessExpire == "" {

@@ -60,6 +60,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// J.6：登录前校验临时锁定（防 brute force）。
+	if user.LockedUntil > time.Now().Unix() {
+		utils.LogError("[Auth.Login] 用户被临时锁定: username=%s, locked_until=%d, ip=%s",
+			user.Username, user.LockedUntil, c.ClientIP())
+		database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.failed", gin.H{
+			"username":     req.Username,
+			"reason":       "account_locked",
+			"locked_until": user.LockedUntil,
+		})
+		utils.Err(c, utils.CodeAuthUserDisabled, "账号因登录失败次数过多被临时锁定，请稍后再试")
+		return
+	}
+
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
 		utils.Info("Login failed: wrong password - %s\n", req.Username)
 		// 审计：登录失败（密码错误；actor 与 target 都是 user.ID）。
@@ -67,6 +80,22 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"username": req.Username,
 			"reason":   "wrong_password",
 		})
+		// J.6：失败计数 + 触发锁定
+		count, _, incErr := database.IncrementFailedLogin(user.ID)
+		if incErr != nil {
+			utils.Warn("[Auth.Login] IncrementFailedLogin 失败: user_id=%d, err=%v", user.ID, incErr)
+		} else if count >= database.LoginMaxAttempts {
+			if lockErr := database.LockUser(user.ID); lockErr != nil {
+				utils.Warn("[Auth.Login] LockUser 失败: user_id=%d, err=%v", user.ID, lockErr)
+			} else {
+				utils.LogError("[Auth.Login] 用户触发锁定: username=%s, count=%d", user.Username, count)
+				database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.locked", gin.H{
+					"username":      req.Username,
+					"failed_count":  count,
+					"locked_minutes": database.LoginLockMinutes,
+				})
+			}
+		}
 		utils.Err(c, utils.CodeAuthInvalidCredentials, "用户名或密码错误")
 		return
 	}
@@ -86,22 +115,30 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	accessToken, err := h.jwtUtils.GenerateAccessToken(user.ID, user.Username)
+	// J.6：登录成功 → 清零失败计数与锁定（兜底，前面 LockedUntil 已校验过）。
+	if user.FailedLoginCount > 0 || user.LockedUntil > 0 {
+		if resetErr := database.ResetFailedLogin(user.ID); resetErr != nil {
+			utils.Warn("[Auth.Login] ResetFailedLogin 失败: user_id=%d, err=%v", user.ID, resetErr)
+		}
+	}
+
+	accessToken, accessExpires, err := h.jwtUtils.GenerateAccessToken(user.ID, user.Username)
 	if err != nil {
 		utils.Info("Failed to generate access token: %v\n", err)
 		utils.Error(c, 500, "Failed to generate token")
 		return
 	}
 
-	refreshToken, err := h.jwtUtils.GenerateRefreshToken(user.ID, user.Username)
+	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(user.ID, user.Username)
 	if err != nil {
 		utils.Info("Failed to generate refresh token: %v\n", err)
 		utils.Error(c, 500, "Failed to generate token")
 		return
 	}
 
-	expiresTime := h.jwtUtils.GetExpirationTime()
-	expires := expiresTime.UnixNano() / 1000000
+	// J.3：expires 字段 = access token 真正的 expires_at（不再是动态计算）。
+	// 客户端可用 expires - now() 计算"距离刷新还剩多久"。
+	expires := accessExpires.UnixNano() / 1000000
 
 	userAPI := user.ToAPIModel()
 	effectivePerms, _ := database.GetEffectivePermissionsForUser(user.ID)
@@ -173,22 +210,27 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	accessToken, err := h.jwtUtils.GenerateAccessToken(claims.UserID, claims.Username)
+	accessToken, accessExpires, err := h.jwtUtils.GenerateAccessToken(claims.UserID, claims.Username)
 	if err != nil {
 		utils.Info("Failed to generate access token: %v\n", err)
 		utils.Error(c, 500, "Failed to generate token")
 		return
 	}
 
-	refreshToken, err := h.jwtUtils.GenerateRefreshToken(claims.UserID, claims.Username)
+	// J.5：Refresh Token Rotation（refresh handler 入口已校验旧 token 有效）。
+	// 成功签发新 token 后，立即吊销旧 refresh token（防泄漏后无限续期）。
+	if req.RefreshToken != "" {
+		utils.RevokeToken(req.RefreshToken, time.Now().Add(h.jwtUtils.GetRefreshExpire()).Unix())
+	}
+
+	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(claims.UserID, claims.Username)
 	if err != nil {
 		utils.Info("Failed to generate refresh token: %v\n", err)
 		utils.Error(c, 500, "Failed to generate token")
 		return
 	}
 
-	expiresTime := h.jwtUtils.GetExpirationTime()
-	expires := expiresTime.UnixNano() / 1000000
+	expires := accessExpires.UnixNano() / 1000000
 
 	response := models.TokenData{
 		AccessToken:  accessToken,

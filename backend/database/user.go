@@ -18,22 +18,24 @@ import (
 
 // User 表示系统中的一个用户；Roles/Permissions 存 JSON 字符串。
 type User struct {
-	ID           int64  `json:"id"`
-	Username     string `json:"username"`
-	PasswordHash string `json:"-"`
-	Nickname     string `json:"nickname"`
-	Avatar       string `json:"avatar"`
-	Roles        string `json:"roles"`
-	Permissions  string `json:"permissions"`
-	RealName     string `json:"real_name"`
-	Email        string `json:"email"`
-	Phone        string `json:"phone"`
-	DepartmentID *int64 `json:"department_id"`
-	Position     string `json:"position"`
-	EmployeeNo   string `json:"employee_no"`
-	Status       string `json:"status"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID               int64  `json:"id"`
+	Username         string `json:"username"`
+	PasswordHash     string `json:"-"`
+	Nickname         string `json:"nickname"`
+	Avatar           string `json:"avatar"`
+	Roles            string `json:"roles"`
+	Permissions      string `json:"permissions"`
+	RealName         string `json:"real_name"`
+	Email            string `json:"email"`
+	Phone            string `json:"phone"`
+	DepartmentID     *int64 `json:"department_id"`
+	Position         string `json:"position"`
+	EmployeeNo       string `json:"employee_no"`
+	Status           string `json:"status"`
+	FailedLoginCount int   `json:"failed_login_count,omitempty"`
+	LockedUntil      int64 `json:"locked_until,omitempty"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 // ToAPIModel 将内部 User（含 JSON 字符串字段）转换为对外的 models.User。
@@ -51,19 +53,21 @@ func (u *User) ToAPIModel() *models.User {
 	}
 
 	return &models.User{
-		ID:           u.ID,
-		Username:     u.Username,
-		Nickname:     u.Nickname,
-		Avatar:       u.Avatar,
-		Roles:        roles,
-		Permissions:  permissions,
-		RealName:     u.RealName,
-		Email:        u.Email,
-		Phone:        u.Phone,
-		DepartmentID: u.DepartmentID,
-		Position:     u.Position,
-		EmployeeNo:   u.EmployeeNo,
-		Status:       u.Status,
+		ID:               u.ID,
+		Username:         u.Username,
+		Nickname:         u.Nickname,
+		Avatar:           u.Avatar,
+		Roles:            roles,
+		Permissions:      permissions,
+		RealName:         u.RealName,
+		Email:            u.Email,
+		Phone:            u.Phone,
+		DepartmentID:     u.DepartmentID,
+		Position:         u.Position,
+		EmployeeNo:       u.EmployeeNo,
+		Status:           u.Status,
+		FailedLoginCount: u.FailedLoginCount,
+		LockedUntil:      u.LockedUntil,
 	}
 }
 
@@ -74,12 +78,13 @@ func GetUserByUsername(username string) (*User, error) {
 	err := DB.QueryRow(
 		`SELECT id, username, password_hash, nickname, avatar, roles, permissions,
 		        real_name, email, phone, department_id, position, employee_no,
-		        status, created_at, updated_at
+		        status, failed_login_count, locked_until, created_at, updated_at
 		 FROM users WHERE username = ?`,
 		username,
 	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Nickname, &user.Avatar,
 		&user.Roles, &user.Permissions, &user.RealName, &user.Email, &user.Phone,
 		&deptID, &user.Position, &user.EmployeeNo, &user.Status,
+		&user.FailedLoginCount, &user.LockedUntil,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
@@ -133,6 +138,69 @@ func UpdateUserPassword(userID int64, newPassword string) error {
 // DeleteUser 删除指定用户。
 func DeleteUser(id int64) error {
 	_, err := DB.Exec(`DELETE FROM users WHERE id = ?`, id)
+	return err
+}
+
+// ==================== J.6 登录失败计数 + 临时锁定 ====================
+//
+// 防 brute force：连续失败 N 次后锁定用户 M 分钟，登录前先校验 locked_until。
+// 调用方流程：
+//   1. GetUserByUsername → 检查 LockedUntil > now() → 拒绝
+//   2. CheckPassword 失败 → IncrementFailedLogin(userID)
+//      若返回的 count >= maxAttempts → LockUser(userID, lockedUntil)
+//   3. CheckPassword 成功 → ResetFailedLogin(userID)
+//
+// 常量（用户可见，便于改）：
+//   - loginMaxAttempts = 5
+//   - loginLockMinutes = 15
+
+// LoginMaxAttempts 触发锁定的连续失败次数。
+const LoginMaxAttempts = 5
+
+// LoginLockMinutes 锁定时长（分钟）。
+const LoginLockMinutes = 15
+
+// IncrementFailedLogin 失败 +1；返回当前 count + locked_until（0 表示未锁）。
+//
+// 调用方根据 count 是否 >= LoginMaxAttempts 决定是否调 LockUser。
+func IncrementFailedLogin(userID int64) (count int, lockedUntil int64, err error) {
+	tx, err := DB.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	now := time.Now().Unix()
+	_, err = tx.Exec(
+		`UPDATE users
+		    SET failed_login_count = failed_login_count + 1,
+		        updated_at = ?
+		  WHERE id = ?`, now, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	row := tx.QueryRow(`SELECT failed_login_count, locked_until FROM users WHERE id = ?`, userID)
+	err = row.Scan(&count, &lockedUntil)
+	if err != nil {
+		return 0, 0, err
+	}
+	return count, lockedUntil, tx.Commit()
+}
+
+// LockUser 设置 locked_until = now + LoginLockMinutes。
+func LockUser(userID int64) error {
+	until := time.Now().Add(time.Duration(LoginLockMinutes) * time.Minute).Unix()
+	_, err := DB.Exec(
+		`UPDATE users SET locked_until = ?, updated_at = ? WHERE id = ?`,
+		until, time.Now().Unix(), userID)
+	return err
+}
+
+// ResetFailedLogin 登录成功后清零失败计数与锁定状态。
+func ResetFailedLogin(userID int64) error {
+	_, err := DB.Exec(
+		`UPDATE users SET failed_login_count = 0, locked_until = 0, updated_at = ? WHERE id = ?`,
+		time.Now().Unix(), userID)
 	return err
 }
 

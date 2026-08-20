@@ -324,6 +324,9 @@ func createTables() error {
 		position TEXT DEFAULT '',
 		employee_no TEXT DEFAULT '',
 		status TEXT DEFAULT 'active',
+		-- J.6：登录失败计数 + 临时锁定（防 brute force）
+		failed_login_count INTEGER NOT NULL DEFAULT 0,
+		locked_until      INTEGER NOT NULL DEFAULT 0,
 		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
 		updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 	);

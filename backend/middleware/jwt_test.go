@@ -61,7 +61,7 @@ func TestJWTAuth_NotBearer_Returns401(t *testing.T) {
 // TestJWTAuth_RefreshTokenUsedAsAccess_Returns401
 func TestJWTAuth_RefreshTokenUsedAsAccess_Returns401(t *testing.T) {
 	j := utils.NewJWTUtils("test-secret-32-chars-xxxxxxxxxxxxxx", time.Minute, time.Hour)
-	tok, err := j.GenerateRefreshToken(7, "alice")
+	tok, _, err := j.GenerateRefreshToken(7, "alice")
 	if err != nil {
 		t.Fatalf("签发 refresh 失败: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestJWTAuth_RefreshTokenUsedAsAccess_Returns401(t *testing.T) {
 // TestJWTAuth_ExpiredToken_Returns401
 func TestJWTAuth_ExpiredToken_Returns401(t *testing.T) {
 	j := utils.NewJWTUtils("test-secret-32-chars-xxxxxxxxxxxxxx", -time.Minute, -time.Hour)
-	tok, _ := j.GenerateAccessToken(7, "alice")
+	tok, _, _ := j.GenerateAccessToken(7, "alice")
 	if code := runJWTMiddleware(t, j, "Bearer "+tok); code != http.StatusUnauthorized {
 		t.Fatalf("过期 token 期望 401，实际 %d", code)
 	}
@@ -83,7 +83,7 @@ func TestJWTAuth_ExpiredToken_Returns401(t *testing.T) {
 func TestJWTAuth_WrongSecret_Returns401(t *testing.T) {
 	signer := utils.NewJWTUtils("secret-A-32-chars-xxxxxxxxxxxxxx", time.Minute, time.Hour)
 	verifier := utils.NewJWTUtils("secret-B-32-chars-xxxxxxxxxxxxxx", time.Minute, time.Hour)
-	tok, _ := signer.GenerateAccessToken(7, "alice")
+	tok, _, _ := signer.GenerateAccessToken(7, "alice")
 	if code := runJWTMiddleware(t, verifier, "Bearer "+tok); code != http.StatusUnauthorized {
 		t.Fatalf("错 secret 期望 401，实际 %d", code)
 	}
@@ -116,7 +116,7 @@ func TestJWTAuth_InvalidIssuer_Returns401(t *testing.T) {
 // TestJWTAuth_ValidToken_Returns200 ContextContainsClaims
 func TestJWTAuth_ValidToken_Returns200(t *testing.T) {
 	j := utils.NewJWTUtils("test-secret-32-chars-xxxxxxxxxxxxxx", time.Minute, time.Hour)
-	tok, _ := j.GenerateAccessToken(7, "alice")
+	tok, _, _ := j.GenerateAccessToken(7, "alice")
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -144,7 +144,7 @@ func TestJWTAuth_ValidToken_Returns200(t *testing.T) {
 // TestJWTAuth_RevokedToken_Returns401 黑名单路径（Phase 4b 之前的 RevokeToken）。
 func TestJWTAuth_RevokedToken_Returns401(t *testing.T) {
 	j := utils.NewJWTUtils("test-secret-32-chars-xxxxxxxxxxxxxx", time.Minute, time.Hour)
-	tok, _ := j.GenerateAccessToken(7, "alice")
+	tok, _, _ := j.GenerateAccessToken(7, "alice")
 
 	// 加入黑名单（TTL 60s > 当前测试时长）
 	utils.RevokeToken(tok, time.Now().Add(time.Minute).Unix())

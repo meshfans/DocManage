@@ -10,7 +10,7 @@ import (
 // TestValidateToken_HappyPath 正常流程：签发 → 校验通过。
 func TestValidateToken_HappyPath(t *testing.T) {
 	j := NewJWTUtils("test-secret", time.Minute, time.Hour)
-	tok, err := j.GenerateAccessToken(7, "alice")
+	tok, _, err := j.GenerateAccessToken(7, "alice")
 	if err != nil {
 		t.Fatalf("签发失败: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 	signer := NewJWTUtils("secret-A", time.Minute, time.Hour)
 	verifier := NewJWTUtils("secret-B", time.Minute, time.Hour)
 
-	tok, _ := signer.GenerateAccessToken(7, "alice")
+	tok, _, _ := signer.GenerateAccessToken(7, "alice")
 	_, err := verifier.ValidateToken(tok)
 	if err == nil {
 		t.Fatal("不同 secret 应被拒绝")
@@ -95,7 +95,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 // TestValidateToken_Expired 已过期 token → 拒绝。
 func TestValidateToken_Expired(t *testing.T) {
 	j := NewJWTUtils("test-secret", -time.Minute, -time.Hour) // 立刻过期
-	tok, _ := j.GenerateAccessToken(7, "alice")
+	tok, _, _ := j.GenerateAccessToken(7, "alice")
 	_, err := j.ValidateToken(tok)
 	if err == nil {
 		t.Fatal("过期 token 应被拒绝")
