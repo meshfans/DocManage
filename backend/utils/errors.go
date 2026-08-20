@@ -126,6 +126,14 @@ const (
 	CodeAuditReconcileEmpty ErrCode = "audit.reconcile_empty"
 )
 
+// ==================== 提醒（reminder）====================
+// Phase 3c (Critical #6) 补全。
+const (
+	CodeReminderTemplateNotFound     ErrCode = "reminder.template_not_found"
+	CodeReminderSubscriptionNotFound ErrCode = "reminder.subscription_not_found"
+	CodeReminderPermissionDenied     ErrCode = "reminder.permission_denied"
+)
+
 // ==================== 系统 / 调度 / 限流 ====================
 
 const (

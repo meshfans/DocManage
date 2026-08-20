@@ -128,7 +128,7 @@ func (h *ReminderHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 	if old == nil {
-		utils.Error(c, http.StatusNotFound, "模板不存在")
+		utils.Err(c, utils.CodeReminderTemplateNotFound, "模板不存在")
 		return
 	}
 	if old.IsSystem {
@@ -187,7 +187,7 @@ func (h *ReminderHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 	if old == nil {
-		utils.Error(c, http.StatusNotFound, "模板不存在")
+		utils.Err(c, utils.CodeReminderTemplateNotFound, "模板不存在")
 		return
 	}
 	if old.IsSystem {
@@ -457,7 +457,7 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 		return
 	}
 	if old == nil {
-		utils.Error(c, http.StatusNotFound, "订阅不存在")
+		utils.Err(c, utils.CodeReminderSubscriptionNotFound, "订阅不存在")
 		return
 	}
 	if !IsAdminUser(c) && c.GetInt64("user_id") != old.CreatedBy {
@@ -502,7 +502,7 @@ func (h *ReminderHandler) DeleteSubscription(c *gin.Context) {
 		return
 	}
 	if old == nil {
-		utils.Error(c, http.StatusNotFound, "订阅不存在")
+		utils.Err(c, utils.CodeReminderSubscriptionNotFound, "订阅不存在")
 		return
 	}
 	if !IsAdminUser(c) && c.GetInt64("user_id") != old.CreatedBy {
