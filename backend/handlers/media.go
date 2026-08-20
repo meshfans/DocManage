@@ -148,6 +148,8 @@ func (h *MediaHandler) List(c *gin.Context) {
 // ==================== 2. 按 target 查询（绑定反查）====================
 //
 //	GET /api/media/by-target?target_type=contract&target_id=1
+//
+// Phase 2d (High #20 关联)：返回结果按 data_scope 过滤——非 admin 只能看本人/本部门上传。
 func (h *MediaHandler) ListByTarget(c *gin.Context) {
 	targetType := c.Query("target_type")
 	targetID := parseInt64Query(c, "target_id")
@@ -159,6 +161,17 @@ func (h *MediaHandler) ListByTarget(c *gin.Context) {
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
 		return
+	}
+	// data_scope 过滤：admin 看全部；非 admin 仅看本人上传
+	if !IsAdminUser(c) && list != nil {
+		currentUserID := c.GetInt64("user_id")
+		filtered := make([]models.Media, 0, len(list))
+		for _, m := range list {
+			if m.TakenBy == currentUserID || m.CreatedBy == currentUserID {
+				filtered = append(filtered, m)
+			}
+		}
+		list = filtered
 	}
 	utils.Success(c, gin.H{"list": list, "total": len(list)})
 }
@@ -400,7 +413,12 @@ func (h *MediaHandler) Restore(c *gin.Context) {
 //
 // 返回所有 active 媒体中出现过的 tag name（去重，按字母序）。
 // 用于前端 tag 过滤下拉框，包含预制 tag 和用户"手打"的 tag。
+//
+// Phase 2d (High #20)：tag 信息可能泄露内部分类/项目代号，加 media:tags 权限码。
 func (h *MediaHandler) ListAllTags(c *gin.Context) {
+	if !RequirePermission(c, "media:tags") {
+		return
+	}
 	tags, err := database.ListAllTagNames()
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())

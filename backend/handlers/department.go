@@ -36,6 +36,12 @@ func (h *DepartmentHandler) GetDepartmentTree(c *gin.Context) {
 }
 
 func (h *DepartmentHandler) GetDepartment(c *gin.Context) {
+	// Phase 2d (Critical #4)：GetDepartment 加 dept:list 权限码。
+	// GetDepartmentTree 仍公开（设计意图：登录用户可见组织树）。
+	if !RequirePermission(c, "dept:list") {
+		return
+	}
+
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
