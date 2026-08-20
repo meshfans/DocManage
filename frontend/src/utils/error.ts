@@ -286,6 +286,20 @@ const I18N: Record<string, Record<Locale, string>> = {
   "system.dependency_missing": {
     "zh-CN": "系统依赖缺失",
     "en-US": "System dependency missing"
+  },
+
+  // ===== reminder (Phase 3c 补全) =====
+  "reminder.template_not_found": {
+    "zh-CN": "提醒模板不存在",
+    "en-US": "Reminder template not found"
+  },
+  "reminder.subscription_not_found": {
+    "zh-CN": "提醒订阅不存在",
+    "en-US": "Reminder subscription not found"
+  },
+  "reminder.permission_denied": {
+    "zh-CN": "无权操作该提醒订阅",
+    "en-US": "No permission for this reminder subscription"
   }
 };
 
