@@ -56,11 +56,11 @@ func (h *RBACManagementHandler) UpsertRole(c *gin.Context) {
 	}
 	var r database.Role
 	if err := c.ShouldBindJSON(&r); err != nil {
-		utils.BadRequest(c, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 	if r.Code == "" {
-		utils.BadRequest(c, "code 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "code 不能为空")
 		return
 	}
 	// 2026-06-28 RBAC v3 B6 审计增强：upsert 前先查旧 role，记录 old_data_scope/old_permissions/old_custom_dept_ids。
@@ -79,7 +79,7 @@ func (h *RBACManagementHandler) UpsertRole(c *gin.Context) {
 		oldCustomDeptIDs = oldRole.CustomDeptIDs
 	}
 	if err := database.UpsertRole(&r); err != nil {
-		utils.BadRequest(c, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 	InvalidateAllPermsCache()
@@ -128,12 +128,12 @@ func (h *RBACManagementHandler) DeleteRole(c *gin.Context) {
 	}
 	code := c.Param("code")
 	if code == "" {
-		utils.BadRequest(c, "code 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "code 不能为空")
 		return
 	}
 	n, err := database.DeleteRole(code)
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 	InvalidateAllPermsCache()
@@ -170,15 +170,15 @@ func (h *RBACManagementHandler) UpsertPermission(c *gin.Context) {
 	}
 	var p database.Permission
 	if err := c.ShouldBindJSON(&p); err != nil {
-		utils.BadRequest(c, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 	if p.Code == "" {
-		utils.BadRequest(c, "code 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "code 不能为空")
 		return
 	}
 	if err := database.UpsertPermission(&p); err != nil {
-		utils.BadRequest(c, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 	InvalidateAllPermsCache()
@@ -204,13 +204,13 @@ func (h *RBACManagementHandler) DeletePermission(c *gin.Context) {
 	}
 	code := c.Param("code")
 	if code == "" {
-		utils.BadRequest(c, "code 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "code 不能为空")
 		return
 	}
 	// 审计：删除前取 permission id。
 	oldPerm, _ := database.GetPermissionByCode(code)
 	if err := database.DeletePermission(code); err != nil {
-		utils.BadRequest(c, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 	InvalidateAllPermsCache()
@@ -236,11 +236,11 @@ func (h *RBACManagementHandler) CheckPermission(c *gin.Context) {
 		RequiredCodes []string `json:"required_codes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 	if req.Username == "" {
-		utils.BadRequest(c, "username 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "username 不能为空")
 		return
 	}
 

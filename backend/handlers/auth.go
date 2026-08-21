@@ -41,7 +41,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "Invalid request body")
+		utils.Err(c, utils.CodeInvalidParam, "Invalid request body")
 		return
 	}
 
@@ -211,7 +211,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	var req models.RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "Invalid request body")
+		utils.Err(c, utils.CodeInvalidParam, "Invalid request body")
 		return
 	}
 
@@ -464,7 +464,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		NewPassword string `json:"new_password" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 

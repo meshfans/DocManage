@@ -152,7 +152,7 @@ func (h *MediaHandler) ListByTarget(c *gin.Context) {
 	targetType := c.Query("target_type")
 	targetID := parseInt64Query(c, "target_id")
 	if targetType == "" || targetID <= 0 {
-		utils.BadRequest(c, "缺少 target_type 或 target_id")
+		utils.Err(c, utils.CodeInvalidParam, "缺少 target_type 或 target_id")
 		return
 	}
 	list, err := database.ListMediaByTarget(targetType, targetID)
@@ -185,7 +185,7 @@ func (h *MediaHandler) ListByTarget(c *gin.Context) {
 func (h *MediaHandler) Get(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	m, err := database.GetMediaByID(id)
@@ -229,19 +229,19 @@ func (h *MediaHandler) Get(c *gin.Context) {
 func (h *MediaHandler) Create(c *gin.Context) {
 	var m models.Media
 	if err := c.ShouldBindJSON(&m); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 	if m.SnowID == "" {
-		utils.BadRequest(c, "snowid 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "snowid 不能为空")
 		return
 	}
 	if !models.IsValidMediaType(string(m.Type)) {
-		utils.BadRequest(c, "非法的 type: "+string(m.Type))
+		utils.Err(c, utils.CodeInvalidParam, "非法的 type: "+string(m.Type))
 		return
 	}
 	if m.Source != "" && !models.IsValidMediaSource(string(m.Source)) {
-		utils.BadRequest(c, "非法的 source: "+string(m.Source))
+		utils.Err(c, utils.CodeInvalidParam, "非法的 source: "+string(m.Source))
 		return
 	}
 	currentUserID := c.GetInt64("user_id")
@@ -275,7 +275,7 @@ func (h *MediaHandler) Create(c *gin.Context) {
 func (h *MediaHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	m, err := database.GetMediaByID(id)
@@ -302,7 +302,7 @@ func (h *MediaHandler) Update(c *gin.Context) {
 		Bindings   []models.MediaBinding `json:"bindings"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求: "+err.Error())
 		return
 	}
 
@@ -317,7 +317,7 @@ func (h *MediaHandler) Update(c *gin.Context) {
 	status := ""
 	if req.Status != nil {
 		if !models.IsValidMediaStatus(*req.Status) {
-			utils.BadRequest(c, "非法的 status: "+*req.Status)
+			utils.Err(c, utils.CodeInvalidParam, "非法的 status: "+*req.Status)
 			return
 		}
 		status = *req.Status
@@ -347,7 +347,7 @@ func (h *MediaHandler) Update(c *gin.Context) {
 func (h *MediaHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	m, err := database.GetMediaByID(id)
@@ -378,7 +378,7 @@ func (h *MediaHandler) Delete(c *gin.Context) {
 func (h *MediaHandler) Restore(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	// Restore 不限制 deleted_at = 0（否则查不到）
@@ -389,7 +389,7 @@ func (h *MediaHandler) Restore(c *gin.Context) {
 		return
 	}
 	if m.Status != models.MediaStatusDeleted {
-		utils.BadRequest(c, "该媒体未删除，无需恢复")
+		utils.Err(c, utils.CodeInvalidParam, "该媒体未删除，无需恢复")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
@@ -438,11 +438,11 @@ func (h *MediaHandler) BulkAddTag(c *gin.Context) {
 		Color   string  `json:"color"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求: "+err.Error())
 		return
 	}
 	if len(req.IDs) == 0 || req.TagName == "" {
-		utils.BadRequest(c, "ids 和 tag_name 必填")
+		utils.Err(c, utils.CodeInvalidParam, "ids 和 tag_name 必填")
 		return
 	}
 	// 权限校验：每个 id 都得是本人或 admin
@@ -455,7 +455,7 @@ func (h *MediaHandler) BulkAddTag(c *gin.Context) {
 			return
 		}
 		if m == nil {
-			utils.BadRequest(c, "媒体不存在: id="+strconv.FormatInt(id, 10))
+			utils.Err(c, utils.CodeInvalidParam, "媒体不存在: id="+strconv.FormatInt(id, 10))
 			return
 		}
 		if !isAdmin && m.TakenBy != 0 && m.TakenBy != currentUserID {
@@ -486,11 +486,11 @@ func (h *MediaHandler) BulkDelete(c *gin.Context) {
 		IDs []int64 `json:"ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求: "+err.Error())
 		return
 	}
 	if len(req.IDs) == 0 {
-		utils.BadRequest(c, "ids 必填")
+		utils.Err(c, utils.CodeInvalidParam, "ids 必填")
 		return
 	}
 	currentUserID := c.GetInt64("user_id")
@@ -538,11 +538,11 @@ func (h *MediaHandler) BulkSetCustomer(c *gin.Context) {
 		CustomerID int64   `json:"customer_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求: "+err.Error())
 		return
 	}
 	if len(req.IDs) == 0 {
-		utils.BadRequest(c, "ids 必填")
+		utils.Err(c, utils.CodeInvalidParam, "ids 必填")
 		return
 	}
 	// P1 修复：customer_id > 0 时校验客户存在性（避免关联到不存在的 ID）
@@ -553,7 +553,7 @@ func (h *MediaHandler) BulkSetCustomer(c *gin.Context) {
 			return
 		}
 		if !exists {
-			utils.BadRequest(c, fmt.Sprintf("客户 #%d 不存在", req.CustomerID))
+			utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("客户 #%d 不存在", req.CustomerID))
 			return
 		}
 	}
@@ -602,7 +602,7 @@ func (h *MediaHandler) BulkSetCustomer(c *gin.Context) {
 func (h *MediaHandler) Download(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	// 2026-06-27 Bug #6 修复：GetMediaByID 已不滤 deleted_at，
@@ -653,7 +653,7 @@ func (h *MediaHandler) Download(c *gin.Context) {
 func (h *MediaHandler) Thumbnail(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	// 2026-06-27 Bug #6 修复：GetMediaByID 已不滤 deleted_at，
@@ -710,7 +710,7 @@ const (
 func (h *MediaHandler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		utils.BadRequest(c, "缺少 file 字段: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "缺少 file 字段: "+err.Error())
 		return
 	}
 
@@ -725,11 +725,11 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	case "photo", "":
 		maxSize = MaxImageUploadSize
 	default:
-		utils.BadRequest(c, "非法的 type: "+uploadType)
+		utils.Err(c, utils.CodeInvalidParam, "非法的 type: "+uploadType)
 		return
 	}
 	if file.Size > maxSize {
-		utils.BadRequest(c, fmt.Sprintf("文件过大（%.1f MB），%s 类型最大 %d MB",
+		utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("文件过大（%.1f MB），%s 类型最大 %d MB",
 			float64(file.Size)/1024/1024, uploadType, maxSize/1024/1024))
 		return
 	}
@@ -849,7 +849,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 		source = string(models.MediaSourceUpload)
 	}
 	if !models.IsValidMediaSource(source) {
-		utils.BadRequest(c, "非法的 source: "+source)
+		utils.Err(c, utils.CodeInvalidParam, "非法的 source: "+source)
 		return
 	}
 	name := c.PostForm("name")
@@ -866,7 +866,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 			return
 		}
 		if !exists {
-			utils.BadRequest(c, fmt.Sprintf("客户 #%d 不存在", customerID))
+			utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("客户 #%d 不存在", customerID))
 			return
 		}
 	}
@@ -961,12 +961,12 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 func (h *MediaHandler) CheckHash(c *gin.Context) {
 	hash := strings.TrimSpace(c.Query("hash_sha256"))
 	if hash == "" {
-		utils.BadRequest(c, "缺少 hash_sha256 参数")
+		utils.Err(c, utils.CodeInvalidParam, "缺少 hash_sha256 参数")
 		return
 	}
 	// 简单 SHA-256 格式校验
 	if len(hash) != 64 {
-		utils.BadRequest(c, "hash_sha256 格式错误（应为 64 字符十六进制）")
+		utils.Err(c, utils.CodeInvalidParam, "hash_sha256 格式错误（应为 64 字符十六进制）")
 		return
 	}
 	m, err := database.GetMediaByHash(hash)
@@ -995,7 +995,7 @@ func (h *MediaHandler) CheckHash(c *gin.Context) {
 func (h *MediaHandler) Verify(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	m, err := database.GetMediaByID(id)

@@ -44,7 +44,7 @@ func (h *DepartmentHandler) GetDepartment(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的部门ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的部门ID")
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *DepartmentHandler) CreateDepartment(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据")
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据")
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *DepartmentHandler) UpdateDepartment(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的部门ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的部门ID")
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *DepartmentHandler) UpdateDepartment(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据")
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据")
 		return
 	}
 
@@ -152,7 +152,7 @@ func (h *DepartmentHandler) DeleteDepartment(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的部门ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的部门ID")
 		return
 	}
 
@@ -196,7 +196,7 @@ func (h *DepartmentHandler) GetDepartmentUsers(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的部门ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的部门ID")
 		return
 	}
 

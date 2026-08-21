@@ -45,7 +45,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 
@@ -156,13 +156,13 @@ func (h *CustomerHandler) GetCustomerByID(c *gin.Context) {
 
 	idStr := c.Query("id")
 	if idStr == "" {
-		utils.BadRequest(c, "缺少客户ID参数")
+		utils.Err(c, utils.CodeInvalidParam, "缺少客户ID参数")
 		return
 	}
 
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的客户ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的客户ID")
 		return
 	}
 
@@ -208,12 +208,12 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据")
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据")
 		return
 	}
 
 	if req.ID <= 0 {
-		utils.BadRequest(c, "无效的客户ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的客户ID")
 		return
 	}
 
@@ -245,12 +245,12 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据")
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据")
 		return
 	}
 
 	if req.ID <= 0 {
-		utils.BadRequest(c, "无效的客户ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的客户ID")
 		return
 	}
 
@@ -288,7 +288,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据")
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据")
 		return
 	}
 
@@ -307,7 +307,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	}
 
 	if req.CustomerID <= 0 {
-		utils.BadRequest(c, "无效的客户ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的客户ID")
 		return
 	}
 
@@ -444,7 +444,7 @@ func (h *CustomerHandler) GetSignature(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的签名ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的签名ID")
 		return
 	}
 
@@ -499,34 +499,34 @@ func (h *CustomerHandler) CreateCustomerExt(c *gin.Context) {
 
 	var in database.CustomerInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 
 	// 基础校验
 	if in.Phone == "" {
-		utils.BadRequest(c, "联系电话不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "联系电话不能为空")
 		return
 	}
 	if in.CustomerType == "" {
 		in.CustomerType = "individual"
 	}
 	if in.CustomerType != "individual" && in.CustomerType != "enterprise" {
-		utils.BadRequest(c, "客户类型必须是 individual 或 enterprise")
+		utils.Err(c, utils.CodeInvalidParam, "客户类型必须是 individual 或 enterprise")
 		return
 	}
 	// 按类型强校验关键字段
 	if in.CustomerType == "individual" && in.RealName == "" {
-		utils.BadRequest(c, "个人客户的真实姓名不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "个人客户的真实姓名不能为空")
 		return
 	}
 	if in.CustomerType == "enterprise" && in.CompanyName == "" {
-		utils.BadRequest(c, "企业客户的企业名称不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "企业客户的企业名称不能为空")
 		return
 	}
 	if in.CustomerType == "enterprise" && in.USCC != "" {
 		if err := validateUSCC(in.USCC); err != nil {
-			utils.BadRequest(c, "统一社会信用代码无效: "+err.Error())
+			utils.Err(c, utils.CodeInvalidParam, "统一社会信用代码无效: "+err.Error())
 			return
 		}
 	}
@@ -574,31 +574,31 @@ func (h *CustomerHandler) UpdateCustomerExt(c *gin.Context) {
 		database.CustomerInput
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 	if req.ID <= 0 {
-		utils.BadRequest(c, "无效的客户ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的客户ID")
 		return
 	}
 
 	// 字段验证（访问嵌入字段时直接用名字，会被 Go 自动"提升"）
 	if req.CustomerType != "" && req.CustomerType != "individual" && req.CustomerType != "enterprise" {
-		utils.BadRequest(c, "客户类型必须是 individual 或 enterprise")
+		utils.Err(c, utils.CodeInvalidParam, "客户类型必须是 individual 或 enterprise")
 		return
 	}
 	// 按类型校验必填字段（与 CreateCustomerExt 保持一致）
 	if req.CustomerType == "individual" && req.RealName == "" {
-		utils.BadRequest(c, "个人客户的真实姓名不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "个人客户的真实姓名不能为空")
 		return
 	}
 	if req.CustomerType == "enterprise" && req.CompanyName == "" {
-		utils.BadRequest(c, "企业客户的企业名称不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "企业客户的企业名称不能为空")
 		return
 	}
 	if req.CustomerType == "enterprise" && req.USCC != "" {
 		if err := validateUSCC(req.USCC); err != nil {
-			utils.BadRequest(c, "统一社会信用代码无效: "+err.Error())
+			utils.Err(c, utils.CodeInvalidParam, "统一社会信用代码无效: "+err.Error())
 			return
 		}
 	}
@@ -633,7 +633,7 @@ func (h *CustomerHandler) GetCustomersByTypeList(c *gin.Context) {
 
 	ctype := c.Query("type")
 	if ctype != "" && ctype != "individual" && ctype != "enterprise" {
-		utils.BadRequest(c, "type 必须是 individual 或 enterprise")
+		utils.Err(c, utils.CodeInvalidParam, "type 必须是 individual 或 enterprise")
 		return
 	}
 
@@ -671,7 +671,7 @@ func (h *CustomerHandler) SearchCustomersByTypeList(c *gin.Context) {
 
 	ctype := c.Query("type")
 	if ctype != "" && ctype != "individual" && ctype != "enterprise" {
-		utils.BadRequest(c, "type 必须是 individual 或 enterprise")
+		utils.Err(c, utils.CodeInvalidParam, "type 必须是 individual 或 enterprise")
 		return
 	}
 	keyword := c.Query("keyword")
