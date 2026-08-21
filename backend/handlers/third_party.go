@@ -125,6 +125,7 @@ func (h *ThirdPartyHandler) ListContracts(c *gin.Context) {
 	// data_scope 拼接逻辑抽到 listThirdPartyContractsScoped helper
 	list, total, err = listThirdPartyContractsScoped(c, customerID, customerType, status, search, page, pageSize)
 	if err != nil {
+		utils.LogError("[third_party.ListContracts] 失败: customerID=%d err=%v", customerID, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -273,6 +274,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	// 校验 customer 存在
 	customer, err := database.GetCustomerByID(req.CustomerID)
 	if err != nil {
+		utils.LogError("[third_party.CreateContract] 查询客户失败 customerID=%d: %v", req.CustomerID, err)
 		utils.Err(c, utils.CodeInternal, "查询客户失败: "+err.Error())
 		return
 	}
@@ -300,6 +302,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	)
 	if err != nil {
 		// UNIQUE 冲突：合同号重复（极端并发）
+		utils.LogError("[third_party.CreateContract] 创建失败 title=%q customerID=%d: %v", req.Title, req.CustomerID, err)
 		utils.Err(c, utils.CodeInternal, "创建失败: "+err.Error())
 		return
 	}
@@ -335,6 +338,7 @@ func (h *ThirdPartyHandler) GetContract(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
+		utils.LogError("[third_party.GetContract] 查询失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -364,6 +368,7 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
+		utils.LogError("[third_party.UpdateContract] 查询失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -430,6 +435,7 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 		req.SignDate, req.StartDate, req.EndDate,
 		req.Remark,
 	); err != nil {
+		utils.LogError("[third_party.UpdateContract] 更新失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "更新失败: "+err.Error())
 		return
 	}
@@ -459,6 +465,7 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
+		utils.LogError("[third_party.ChangeStatus] 查询失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -487,6 +494,7 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 		return
 	}
 	if err := database.UpdateThirdPartyContractStatus(id, req.Status); err != nil {
+		utils.LogError("[third_party.ChangeStatus] 更新状态失败 id=%d status=%s: %v", id, req.Status, err)
 		utils.Err(c, utils.CodeInternal, "更新状态失败: "+err.Error())
 		return
 	}
@@ -514,6 +522,7 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
+		utils.LogError("[third_party.DeleteContract] 查询失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -535,6 +544,7 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 		utils.Warn("[third_party] 删除文件失败（继续删记录）: %v", err)
 	}
 	if err := database.DeleteThirdPartyContract(id); err != nil {
+		utils.LogError("[third_party.DeleteContract] 删除失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "删除失败: "+err.Error())
 		return
 	}
@@ -562,6 +572,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
+		utils.LogError("[third_party.UploadFile] 查询失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -617,6 +628,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	snowid := strings.TrimPrefix(t.ContractNo, "TP-")
 	_, relPath, err := storage.SaveThirdPartyAsset(pdfBytes, snowid)
 	if err != nil {
+		utils.LogError("[third_party.UploadFile] 保存文件失败 id=%d snowid=%s: %v", id, snowid, err)
 		utils.Err(c, utils.CodeInternal, "保存文件失败: "+err.Error())
 		return
 	}
@@ -633,6 +645,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	if err != nil {
 		// 文件已存但算 hash 失败：回滚
 		_ = storage.DeleteFile(relPath)
+		utils.LogError("[third_party.UploadFile] 算哈希失败 id=%d absPath=%s: %v", id, absPath, err)
 		utils.Err(c, utils.CodeInternal, "算哈希失败: "+err.Error())
 		return
 	}
@@ -642,6 +655,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 		hash.SM3Hash, hash.SHA256Hash, hash.CombinedHash,
 	); err != nil {
 		_ = storage.DeleteFile(relPath)
+		utils.LogError("[third_party.UploadFile] 更新文件字段失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "更新文件字段失败: "+err.Error())
 		return
 	}
@@ -699,6 +713,7 @@ func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
+		utils.LogError("[third_party.DownloadFile] 查询失败 id=%d: %v", id, err)
 		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
@@ -761,7 +776,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 		// 用 GetThirdPartyContractsByIDs 批量查（N+1 防护）；任何 id 不存在 / 权限拒绝 → 403。
 		contracts, terr := database.GetThirdPartyContractsByIDs(req.IDs)
 		if terr != nil {
-			utils.Warn("[third_party.BulkDownload] GetThirdPartyContractsByIDs 失败 ids=%v err=%v", req.IDs, terr)
+			utils.LogError("[third_party.BulkDownload] GetThirdPartyContractsByIDs 失败 ids=%v: %v", req.IDs, terr)
 			utils.Err(c, utils.CodeInternal, "查询失败: "+terr.Error())
 			return
 		}
@@ -798,6 +813,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 		var err error
 		list, _, err = listThirdPartyContractsScoped(c, req.CustomerID, "", req.Status, req.Search, 1, 1000)
 		if err != nil {
+			utils.LogError("[third_party.BulkDownload] listThirdPartyContractsScoped 失败 customerID=%d status=%q search=%q: %v", req.CustomerID, req.Status, req.Search, err)
 			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 			return
 		}
@@ -814,6 +830,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 	// 拿文件信息
 	files, err := database.ListThirdPartyContractFiles(ids)
 	if err != nil {
+		utils.LogError("[third_party.BulkDownload] ListThirdPartyContractFiles 失败 ids=%v: %v", ids, err)
 		utils.Err(c, utils.CodeInternal, "查询文件失败: "+err.Error())
 		return
 	}
@@ -831,6 +848,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 	// 简单的非流式 ZIP（文件数 < 100 时足够用；大文件场景可优化为 archive/zip 流式 writer）
 	zipData, skipped, err := buildZipFromFiles(storage, files)
 	if err != nil {
+		utils.LogError("[third_party.BulkDownload] buildZipFromFiles 失败 files=%d: %v", len(files), err)
 		utils.Err(c, utils.CodeInternal, "打包失败: "+err.Error())
 		return
 	}
