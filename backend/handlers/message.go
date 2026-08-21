@@ -3,7 +3,6 @@ package handlers
 import (
 	"doc/database"
 	"doc/utils"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -49,6 +48,10 @@ type wsNewMessagePayload struct {
 }
 
 func (h *MessageHandler) GetMessages(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequirePermission 兜底。
+	if !RequirePermission(c, "message:list") {
+		return
+	}
 	userID := c.GetInt64("user_id")
 	
 	limitStr := c.DefaultQuery("limit", "20")
@@ -66,7 +69,8 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 	
 	messages, err := database.GetMessagesByUserID(userID, limit, offset)
 	if err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "获取消息列表失败", err)
+		utils.LogError("[message.GetMessages] 失败 userID=%d: %v", userID, err)
+		utils.Err(c, utils.CodeInternal, "获取消息列表失败: "+err.Error())
 		return
 	}
 	
@@ -81,11 +85,16 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 }
 
 func (h *MessageHandler) GetUnreadCount(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequirePermission 兜底。
+	if !RequirePermission(c, "message:unread-count") {
+		return
+	}
 	userID := c.GetInt64("user_id")
 	
 	count, err := database.GetUnreadMessageCount(userID)
 	if err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "获取未读消息数失败", err)
+		utils.LogError("[message.GetUnreadCount] 失败 userID=%d: %v", userID, err)
+		utils.Err(c, utils.CodeInternal, "获取未读消息数失败: "+err.Error())
 		return
 	}
 	
@@ -100,7 +109,7 @@ func (h *MessageHandler) CreateMessage(c *gin.Context) {
 	}
 	var req CreateMessageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "参数错误: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "参数错误: "+err.Error())
 		return
 	}
 
@@ -114,7 +123,8 @@ func (h *MessageHandler) CreateMessage(c *gin.Context) {
 	
 	id, err := database.CreateMessage(req.UserID, senderID, req.Title, req.Content, msgType)
 	if err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "创建消息失败", err)
+		utils.LogError("[message.CreateMessage] 失败 userID=%d senderID=%d: %v", req.UserID, senderID, err)
+		utils.Err(c, utils.CodeInternal, "创建消息失败: "+err.Error())
 		return
 	}
 
@@ -138,17 +148,22 @@ func (h *MessageHandler) CreateMessage(c *gin.Context) {
 }
 
 func (h *MessageHandler) MarkAsRead(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequirePermission 兜底。
+	if !RequirePermission(c, "message:mark-read") {
+		return
+	}
 	userID := c.GetInt64("user_id")
 	
 	messageIDStr := c.Param("id")
 	messageID, err := strconv.ParseInt(messageIDStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的消息ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的消息ID")
 		return
 	}
 	
 	if err := database.MarkMessageAsRead(messageID, userID); err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "标记消息已读失败", err)
+		utils.LogError("[message.MarkAsRead] 失败 messageID=%d userID=%d: %v", messageID, userID, err)
+		utils.Err(c, utils.CodeInternal, "标记消息已读失败: "+err.Error())
 		return
 	}
 	
@@ -156,10 +171,15 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 }
 
 func (h *MessageHandler) MarkAllAsRead(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequirePermission 兜底。
+	if !RequirePermission(c, "message:mark-all-read") {
+		return
+	}
 	userID := c.GetInt64("user_id")
 	
 	if err := database.MarkAllMessagesAsRead(userID); err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "标记所有消息已读失败", err)
+		utils.LogError("[message.MarkAllAsRead] 失败 userID=%d: %v", userID, err)
+		utils.Err(c, utils.CodeInternal, "标记所有消息已读失败: "+err.Error())
 		return
 	}
 	
@@ -167,17 +187,22 @@ func (h *MessageHandler) MarkAllAsRead(c *gin.Context) {
 }
 
 func (h *MessageHandler) DeleteMessage(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequirePermission 兜底。
+	if !RequirePermission(c, "message:delete") {
+		return
+	}
 	userID := c.GetInt64("user_id")
 	
 	messageIDStr := c.Param("id")
 	messageID, err := strconv.ParseInt(messageIDStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的消息ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的消息ID")
 		return
 	}
 	
 	if err := database.DeleteMessage(messageID, userID); err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "删除消息失败", err)
+		utils.LogError("[message.DeleteMessage] 失败 messageID=%d userID=%d: %v", messageID, userID, err)
+		utils.Err(c, utils.CodeInternal, "删除消息失败: "+err.Error())
 		return
 	}
 	
@@ -185,18 +210,23 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 }
 
 func (h *MessageHandler) GetMessage(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequirePermission 兜底。
+	if !RequirePermission(c, "message:detail") {
+		return
+	}
 	userID := c.GetInt64("user_id")
 	
 	messageIDStr := c.Param("id")
 	messageID, err := strconv.ParseInt(messageIDStr, 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的消息ID")
+		utils.Err(c, utils.CodeInvalidParam, "无效的消息ID")
 		return
 	}
 	
 	msg, err := database.GetMessageByID(messageID)
 	if err != nil {
-		utils.ErrorWithDetail(c, http.StatusInternalServerError, "获取消息详情失败", err)
+		utils.LogError("[message.GetMessage] 失败 messageID=%d: %v", messageID, err)
+		utils.Err(c, utils.CodeInternal, "获取消息详情失败: "+err.Error())
 		return
 	}
 	

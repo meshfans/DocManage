@@ -162,6 +162,11 @@ type ConfigFile struct {
 }
 
 func (h *SystemHandler) GetConfigFile(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequireAdmin 兜底，避免 APIGateMiddleware 路径配置错误导致越权。
+	// APIGate 也会校验，这里是双保险。
+	if !RequireAdmin(c) {
+		return
+	}
 	// 2026-08-20：不再从 config.GlobalConfig 读（进程内值会被环境变量覆盖，
 	// 如 JWT_SECRET / SERVER_HOST / DB_PATH / UPLOAD_DIR）。
 	// 「配置文件」tab 的语义是"展示和编辑磁盘上的 JSON 文件内容"，
@@ -229,6 +234,10 @@ func (h *SystemHandler) GetConfigFile(c *gin.Context) {
 }
 
 func (h *SystemHandler) SaveConfigFile(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequireAdmin（写磁盘配置文件是高危操作，仅 admin 可执行）。
+	if !RequireAdmin(c) {
+		return
+	}
 	var req ConfigFile
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "无效的请求数据")
@@ -422,6 +431,10 @@ func SetGracefulShutdownFunc(f func()) {
 }
 
 func (h *SystemHandler) ShutdownServer(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequireAdmin（关停服务是高危操作）。
+	if !RequireAdmin(c) {
+		return
+	}
 	utils.Success(c, gin.H{
 		"message": "服务器正在关闭",
 	})
@@ -440,6 +453,10 @@ type GenerateSSLCertRequest struct {
 }
 
 func (h *SystemHandler) GenerateSSLCert(c *gin.Context) {
+	// MP3（2026-08-21）：显式 RequireAdmin（生成证书涉及文件系统写入，仅 admin 可执行）。
+	if !RequireAdmin(c) {
+		return
+	}
 	var req GenerateSSLCertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "无效的请求数据")
