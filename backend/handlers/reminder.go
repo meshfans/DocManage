@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"database/sql"
 	"doc/database"
 	"doc/middleware"
+	"doc/models"
 	"doc/services"
 	"doc/utils"
 	"fmt"
@@ -65,22 +65,22 @@ func (h *ReminderHandler) CreateTemplate(c *gin.Context) {
 		SortOrder   int    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.TemplateKey) == "" {
-		utils.BadRequest(c, "template_key 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "template_key 不能为空")
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		utils.BadRequest(c, "name 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "name 不能为空")
 		return
 	}
 	if strings.TrimSpace(req.RuleType) == "" {
 		req.RuleType = "contract_expiring"
 	}
 	if req.AdvanceDays < 0 || req.AdvanceDays > 365 {
-		utils.BadRequest(c, "advance_days 应在 [0, 365]")
+		utils.Err(c, utils.CodeInvalidParam, "advance_days 应在 [0, 365]")
 		return
 	}
 
@@ -123,7 +123,7 @@ func (h *ReminderHandler) UpdateTemplate(c *gin.Context) {
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	old, err := database.GetReminderTemplateByID(id)
@@ -149,11 +149,11 @@ func (h *ReminderHandler) UpdateTemplate(c *gin.Context) {
 		SortOrder   int    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		utils.BadRequest(c, "name 不能为空")
+		utils.Err(c, utils.CodeInvalidParam, "name 不能为空")
 		return
 	}
 
@@ -184,7 +184,7 @@ func (h *ReminderHandler) DeleteTemplate(c *gin.Context) {
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	old, err := database.GetReminderTemplateByID(id)
@@ -303,11 +303,11 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 		Remark       string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 	if req.TemplateID <= 0 {
-		utils.BadRequest(c, "template_id 必填")
+		utils.Err(c, utils.CodeInvalidParam, "template_id 必填")
 		return
 	}
 	// 验证模板存在
@@ -317,7 +317,7 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 		return
 	}
 	if tpl == nil {
-		utils.BadRequest(c, "模板不存在")
+		utils.Err(c, utils.CodeInvalidParam, "模板不存在")
 		return
 	}
 	// 第十三阶段 v4：校验 link_type + link_id
@@ -328,37 +328,50 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 		"customer": true, "third_party_contract": true,
 	}
 	if !validLinkTypes[req.LinkType] {
-		utils.BadRequest(c, "link_type 非法，应为 customer/third_party_contract 之一")
+		utils.Err(c, utils.CodeInvalidParam, "link_type 非法，应为 customer/third_party_contract 之一")
 		return
 	}
 	linkIDs := database.ParseReceiverIDs(req.LinkID)
 	if len(linkIDs) == 0 {
-		utils.BadRequest(c, "link_id 必填（至少 1 个有效 ID，多个用逗号分隔）")
+		utils.Err(c, utils.CodeInvalidParam, "link_id 必填（至少 1 个有效 ID，多个用逗号分隔）")
 		return
 	}
 	// 按 link_type 校验每个 link_id 实体存在
+	// MP4（2026-08-21）：N+1 重构。原先 for-loop 对每个 ID 单独查 DB，改为批量 IN 查询（O(1) 次 DB 调用）。
 	switch req.LinkType {
 	case "customer":
+		customers, err := database.GetCustomersByIDs(linkIDs)
+		if err != nil {
+			utils.LogError("[reminder.CreateSubscription] 批量查询客户失败 ids=%v: %v", linkIDs, err)
+			utils.Err(c, utils.CodeInternal, "查询客户失败: "+err.Error())
+			return
+		}
 		for _, cid := range linkIDs {
-			cu, err := database.GetCustomerByID(cid)
-			if err != nil || cu == nil {
-				utils.BadRequest(c, fmt.Sprintf("客户 #%d 不存在", cid))
+			if _, ok := customers[cid]; !ok {
+				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("客户 #%d 不存在", cid))
 				return
 			}
 		}
 	case "third_party_contract":
+		tpcs, err := database.GetThirdPartyContractsByIDs(linkIDs)
+		if err != nil {
+			utils.LogError("[reminder.CreateSubscription] 批量查询第三方合同失败 ids=%v: %v", linkIDs, err)
+			utils.Err(c, utils.CodeInternal, "查询第三方合同失败: "+err.Error())
+			return
+		}
+		// 构建 id → entity 映射，便于 O(1) 查找；同时校验每个 id 都存在
+		byID := make(map[int64]*models.ThirdPartyContract, len(tpcs))
+		for _, tpc := range tpcs {
+			byID[tpc.ID] = tpc
+		}
 		for _, cid := range linkIDs {
-			tpc, err := database.GetThirdPartyContractByID(cid)
-			if err != nil && err != sql.ErrNoRows {
-				utils.BadRequest(c, fmt.Sprintf("查询第三方合同 #%d 失败: %s", cid, err.Error()))
-				return
-			}
-			if tpc == nil {
-				utils.BadRequest(c, fmt.Sprintf("第三方合同 #%d 不存在", cid))
+			tpc, ok := byID[cid]
+			if !ok {
+				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("第三方合同 #%d 不存在", cid))
 				return
 			}
 			if tpc.EndDate == 0 {
-				utils.BadRequest(c, fmt.Sprintf("第三方合同 #%d 无到期日，无法订阅", cid))
+				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("第三方合同 #%d 无到期日，无法订阅", cid))
 				return
 			}
 		}
@@ -371,7 +384,7 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 		req.ReceiverType = "admin" // 缺省 = v1 行为
 	}
 	if !database.IsValidReceiverType(req.ReceiverType) {
-		utils.BadRequest(c, "receiver_type 非法，应为 admin/contract_owner/customer_owner/department/user 之一")
+		utils.Err(c, utils.CodeInvalidParam, "receiver_type 非法，应为 admin/contract_owner/customer_owner/department/user 之一")
 		return
 	}
 	// 第十三阶段 v2：解析 receiver_id CSV
@@ -390,14 +403,14 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 	case "department":
 		// department: 至少 1 个有效 ID
 		if len(ids) == 0 {
-			utils.BadRequest(c, "receiver_type=department 时 receiver_id 必填（部门 ID，多个用逗号分隔）")
+			utils.Err(c, utils.CodeInvalidParam, "receiver_type=department 时 receiver_id 必填（部门 ID，多个用逗号分隔）")
 			return
 		}
 		// 校验每个部门都存在
 		for _, deptID := range ids {
 			dept, err := database.GetDepartmentByID(deptID)
 			if err != nil || dept == nil {
-				utils.BadRequest(c, fmt.Sprintf("部门 #%d 不存在", deptID))
+				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("部门 #%d 不存在", deptID))
 				return
 			}
 		}
@@ -406,18 +419,18 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 	case "user":
 		// user: 至少 1 个有效 ID
 		if len(ids) == 0 {
-			utils.BadRequest(c, "receiver_type=user 时 receiver_id 必填（用户 ID，多个用逗号分隔）")
+			utils.Err(c, utils.CodeInvalidParam, "receiver_type=user 时 receiver_id 必填（用户 ID，多个用逗号分隔）")
 			return
 		}
 		// 校验每个用户存在 + active
 		for _, uid := range ids {
 			id, isActive, err := database.GetUserActiveByID(uid)
 			if err != nil || id == 0 {
-				utils.BadRequest(c, fmt.Sprintf("用户 #%d 不存在", uid))
+				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("用户 #%d 不存在", uid))
 				return
 			}
 			if !isActive {
-				utils.BadRequest(c, fmt.Sprintf("用户 #%d 已停用", uid))
+				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("用户 #%d 已停用", uid))
 				return
 			}
 		}
@@ -463,7 +476,7 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	old, err := database.GetReminderSubscriptionByID(id)
@@ -484,7 +497,7 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 		Remark   string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "无效的请求数据: "+err.Error())
+		utils.Err(c, utils.CodeInvalidParam, "无效的请求数据: "+err.Error())
 		return
 	}
 	if req.IsActive != nil {
@@ -510,7 +523,7 @@ func (h *ReminderHandler) UpdateSubscription(c *gin.Context) {
 func (h *ReminderHandler) DeleteSubscription(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.BadRequest(c, "无效的 id")
+		utils.Err(c, utils.CodeInvalidParam, "无效的 id")
 		return
 	}
 	old, err := database.GetReminderSubscriptionByID(id)
