@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -76,7 +75,7 @@ func (h *ScheduledTaskHandler) GetTask(c *gin.Context) {
 	}
 	t, err := database.GetScheduledTaskByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "任务不存在")
+		utils.Err(c, utils.CodeNotFound, "任务不存在")
 		return
 	}
 	utils.Success(c, t)
@@ -359,7 +358,7 @@ func (h *ScheduledTaskHandler) DeleteTask(c *gin.Context) {
 // RunNow 立即执行
 func (h *ScheduledTaskHandler) RunNow(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -374,7 +373,7 @@ func (h *ScheduledTaskHandler) RunNow(c *gin.Context) {
 	}
 	operatorID := c.GetInt64("user_id")
 	if _, err := s.RunNow(id, operatorID); err != nil {
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"id": id, "triggered_by": "manual", "operator_id": operatorID})
@@ -416,7 +415,7 @@ func (h *ScheduledTaskHandler) GetTaskLogs(c *gin.Context) {
 			utils.Success(c, gin.H{"list": []database.ScheduledTaskLog{}, "total": 0})
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, "查询日志失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询日志失败: "+err.Error())
 		return
 	}
 	if logs == nil {
@@ -440,7 +439,7 @@ func (h *ScheduledTaskHandler) NextRunTime(c *gin.Context) {
 	}
 	s := services.GetScheduler()
 	if s == nil {
-		utils.Error(c, http.StatusServiceUnavailable, "调度器未启动")
+		utils.Err(c, utils.CodeMaintenance, "调度器未启动")
 		return
 	}
 	next, err := s.NextRun(expr)
@@ -472,7 +471,7 @@ func (h *ScheduledTaskHandler) GetTaskAudits(c *gin.Context) {
 	}
 	audits, total, err := database.GetScheduledTaskAudits(id, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询审计失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询审计失败: "+err.Error())
 		return
 	}
 	if audits == nil {

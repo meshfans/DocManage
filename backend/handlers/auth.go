@@ -497,7 +497,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	// 4. 更新密码
 	if err := database.UpdateUserPassword(userID, req.NewPassword); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新密码失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新密码失败: "+err.Error())
 		return
 	}
 

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -22,7 +21,7 @@ func NewUserExtendedHandler() *UserExtendedHandler {
 
 func (h *UserExtendedHandler) GetUsers(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -51,7 +50,7 @@ func (h *UserExtendedHandler) GetUsers(c *gin.Context) {
 
 	users, total, err := database.GetUsersWithDepartmentPaginated(page, pageSize, search)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取用户列表失败")
+		utils.Err(c, utils.CodeInternal, "获取用户列表失败")
 		return
 	}
 
@@ -102,7 +101,7 @@ func (h *UserExtendedHandler) CheckUsername(c *gin.Context) {
 			})
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, "查询用户名失败")
+		utils.Err(c, utils.CodeInternal, "查询用户名失败")
 		return
 	}
 
@@ -125,7 +124,7 @@ func (h *UserExtendedHandler) CheckUsername(c *gin.Context) {
 
 func (h *UserExtendedHandler) CreateUser(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -148,18 +147,18 @@ func (h *UserExtendedHandler) CreateUser(c *gin.Context) {
 	}
 
 	if req.Username == "" || len(req.Username) < 3 {
-		utils.Error(c, http.StatusBadRequest, "用户名至少需要3个字符")
+		utils.Err(c, utils.CodeInvalidParam, "用户名至少需要3个字符")
 		return
 	}
 
 	if req.Password == "" || len(req.Password) < 6 {
-		utils.Error(c, http.StatusBadRequest, "密码至少需要6个字符")
+		utils.Err(c, utils.CodeInvalidParam, "密码至少需要6个字符")
 		return
 	}
 
 	existingUser, err := database.GetUserByUsername(req.Username)
 	if err == nil && existingUser != nil {
-		utils.Error(c, http.StatusBadRequest, "用户名已存在")
+		utils.Err(c, utils.CodeConflict, "用户名已存在")
 		return
 	}
 
@@ -174,12 +173,18 @@ func (h *UserExtendedHandler) CreateUser(c *gin.Context) {
 	userID, err := database.CreateUserExt(req.Username, req.Password, req.Nickname, req.RealName, req.Email, req.Phone, req.Position, req.EmployeeNo, req.Status, req.DepartmentID)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
-			utils.Error(c, http.StatusBadRequest, "用户名已存在")
+			utils.Err(c, utils.CodeConflict, "用户名已存在")
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, err.Error())
+		utils.Err(c, utils.CodeInternal, err.Error())
 		return
 	}
+
+	// 审计：用户创建（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, userID, "user.create", gin.H{
+		"username": req.Username,
+		"status":   req.Status,
+	})
 
 	utils.Success(c, gin.H{
 		"id":      userID,
@@ -195,7 +200,7 @@ func (h *UserExtendedHandler) GetUser(c *gin.Context) {
 		idStr := c.Param("id")
 		targetID, parseErr := strconv.ParseInt(idStr, 10, 64)
 		if parseErr == nil && targetID != currentUserID {
-			utils.Error(c, http.StatusForbidden, "普通用户只能查看自己的资料")
+			utils.Err(c, utils.CodeForbidden, "普通用户只能查看自己的资料")
 			return
 		}
 	}
@@ -209,7 +214,7 @@ func (h *UserExtendedHandler) GetUser(c *gin.Context) {
 
 	user, err := database.GetUserByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "用户不存在")
+		utils.Err(c, utils.CodeNotFound, "用户不存在")
 		return
 	}
 
@@ -218,7 +223,7 @@ func (h *UserExtendedHandler) GetUser(c *gin.Context) {
 
 func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -251,13 +256,13 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 	if req.Username != "" {
 		existingUser, err := database.GetUserByUsername(req.Username)
 		if err == nil && existingUser != nil && existingUser.ID != id {
-			utils.Error(c, http.StatusBadRequest, "用户名已存在")
+			utils.Err(c, utils.CodeConflict, "用户名已存在")
 			return
 		}
 	}
 
 	if req.Password != "" && len(req.Password) < 6 {
-		utils.Error(c, http.StatusBadRequest, "密码至少需要6个字符")
+		utils.Err(c, utils.CodeInvalidParam, "密码至少需要6个字符")
 		return
 	}
 
@@ -268,7 +273,7 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 	err = database.UpdateUserDetails(id, req.Username, req.Password, req.Nickname, req.RealName, req.Email, req.Phone,
 		req.Position, req.EmployeeNo, req.Status, req.DepartmentID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
+		utils.Err(c, utils.CodeInternal, err.Error())
 		return
 	}
 
@@ -276,7 +281,7 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 	if req.Roles != nil {
 		oldUser, _ := database.GetUserByID(id)
 		if oldUser == nil {
-			utils.Error(c, http.StatusNotFound, "用户不存在")
+			utils.Err(c, utils.CodeNotFound, "用户不存在")
 			return
 		}
 		// 保护：admin 用户安全检查（防止误删 admin 角色导致系统无管理员）
@@ -285,7 +290,7 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 			return
 		}
 		if err := database.UpdateUserRoles(id, req.Roles); err != nil {
-			utils.Error(c, http.StatusInternalServerError, "更新角色失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "更新角色失败: "+err.Error())
 			return
 		}
 		if oldUser != nil {
@@ -297,6 +302,12 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 		middleware.InvalidateDataScopeCache(id)
 	}
 
+	// 审计：用户更新（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, id, "user.update", gin.H{
+		"username":  req.Username,
+		"has_roles": req.Roles != nil,
+	})
+
 	utils.Success(c, gin.H{
 		"message": "用户更新成功",
 	})
@@ -307,7 +318,7 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 // body: { roles: ["manager", "common"] }
 func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -330,7 +341,7 @@ func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 	if len(req.Roles) > 0 {
 		validRoles, err := database.GetAllRoles()
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "查询角色失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "查询角色失败: "+err.Error())
 			return
 		}
 		validSet := make(map[string]bool, len(validRoles))
@@ -347,7 +358,7 @@ func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 
 	oldUser, _ := database.GetUserByID(id)
 	if oldUser == nil {
-		utils.Error(c, http.StatusNotFound, "用户不存在")
+		utils.Err(c, utils.CodeNotFound, "用户不存在")
 		return
 	}
 
@@ -358,7 +369,7 @@ func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 	}
 
 	if err := database.UpdateUserRoles(id, req.Roles); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新角色失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新角色失败: "+err.Error())
 		return
 	}
 
@@ -384,7 +395,7 @@ func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 
 func (h *UserExtendedHandler) DeleteUser(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -397,9 +408,12 @@ func (h *UserExtendedHandler) DeleteUser(c *gin.Context) {
 
 	err = database.DeleteUser(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除用户失败")
+		utils.Err(c, utils.CodeInternal, "删除用户失败")
 		return
 	}
+
+	// 审计：用户删除（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, id, "user.delete", gin.H{})
 
 	utils.Success(c, gin.H{
 		"message": "用户删除成功",
@@ -408,7 +422,7 @@ func (h *UserExtendedHandler) DeleteUser(c *gin.Context) {
 
 func (h *UserExtendedHandler) UpdateUserDepartment(c *gin.Context) {
 	if !IsAdminUser(c) {
-		utils.Error(c, http.StatusForbidden, "需要管理员权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员权限")
 		return
 	}
 
@@ -430,11 +444,16 @@ func (h *UserExtendedHandler) UpdateUserDepartment(c *gin.Context) {
 
 	err = database.UpdateUserDepartment(id, req.DepartmentID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "调整部门失败")
+		utils.Err(c, utils.CodeInternal, "调整部门失败")
 		return
 	}
 	// 2026-06-28 RBAC v3：用户主部门变更 → 影响 data_scope=dept/dept_and_sub/self_and_sub_dept → 清该用户缓存
 	middleware.InvalidateDataScopeCache(id)
+
+	// 审计：用户部门变更（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, id, "user.department.change", gin.H{
+		"department_id_set": req.DepartmentID != nil,
+	})
 
 	utils.Success(c, gin.H{
 		"message": "部门调整成功",
@@ -456,7 +475,7 @@ func (h *UserExtendedHandler) GetDepartmentUsers(c *gin.Context) {
 
 	users, err := database.GetUsersByDepartment(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取部门用户失败")
+		utils.Err(c, utils.CodeInternal, "获取部门用户失败")
 		return
 	}
 

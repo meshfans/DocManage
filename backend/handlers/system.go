@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"net/http"
 	"os"
 	"time"
 
@@ -36,7 +35,7 @@ type SystemConfig struct {
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := database.GetAllSystemConfig()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取配置失败")
+		utils.Err(c, utils.CodeInternal, "获取配置失败")
 		return
 	}
 
@@ -173,11 +172,11 @@ func (h *SystemHandler) GetConfigFile(c *gin.Context) {
 	var cfg config.Config
 	if data, err := os.ReadFile(configFile); err == nil {
 		if jerr := json.Unmarshal(data, &cfg); jerr != nil {
-			utils.Error(c, http.StatusInternalServerError, "解析配置文件失败: "+jerr.Error())
+			utils.Err(c, utils.CodeInternal, "解析配置文件失败: "+jerr.Error())
 			return
 		}
 	} else {
-		utils.Error(c, http.StatusInternalServerError, "读取配置文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "读取配置文件失败: "+err.Error())
 		return
 	}
 
@@ -303,7 +302,7 @@ func (h *SystemHandler) BackupNow(c *gin.Context) {
 	operatorID := c.GetInt64("user_id")
 	manifestID, err := services.PerformBackupNow(true, operatorID) // isManual=true
 	if err != nil {
-		utils.Error(c, 500, "备份失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "备份失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{
@@ -361,10 +360,10 @@ func (h *SystemHandler) RestoreFromBackup(c *gin.Context) {
 	if err != nil {
 		if result != nil {
 			// dry_run 模式失败也返回详情
-			utils.Error(c, 500, "恢复失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "恢复失败: "+err.Error())
 			return
 		}
-		utils.Error(c, 500, "恢复失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "恢复失败: "+err.Error())
 		return
 	}
 
@@ -459,7 +458,7 @@ func (h *SystemHandler) GenerateSSLCert(c *gin.Context) {
 
 	certInfo, err := services.GenerateSelfSignedCert(req.CertDir, req.CommonName, req.ExpiredDays)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "生成SSL证书失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "生成SSL证书失败: "+err.Error())
 		return
 	}
 

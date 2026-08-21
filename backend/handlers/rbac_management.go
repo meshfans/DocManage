@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 
 	"doc/database"
 	"doc/middleware"
@@ -157,7 +156,7 @@ func (h *RBACManagementHandler) ListPermissions(c *gin.Context) {
 	}
 	perms, err := database.ListAllPermissions()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询权限失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询权限失败: "+err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"list": perms, "total": len(perms)})

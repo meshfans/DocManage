@@ -190,15 +190,15 @@ func (h *MediaHandler) Get(c *gin.Context) {
 	}
 	m, err := database.GetMediaByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "媒体不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体不存在")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权查看")
+		utils.Err(c, utils.CodeForbidden, "无权查看")
 		return
 	}
 
@@ -280,15 +280,15 @@ func (h *MediaHandler) Update(c *gin.Context) {
 	}
 	m, err := database.GetMediaByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "媒体不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "媒体不存在")
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权修改")
+		utils.Err(c, utils.CodeForbidden, "无权修改")
 		return
 	}
 
@@ -385,7 +385,7 @@ func (h *MediaHandler) Restore(c *gin.Context) {
 	m := &models.Media{}
 	err = database.DB.QueryRow(`SELECT id, taken_by, status FROM media WHERE id = ?`, id).Scan(&m.ID, &m.TakenBy, &m.Status)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m.Status != models.MediaStatusDeleted {
@@ -393,11 +393,11 @@ func (h *MediaHandler) Restore(c *gin.Context) {
 		return
 	}
 	if !h.canAccess(c, m.TakenBy, m.DepartmentID) {
-		utils.Error(c, http.StatusForbidden, "无权恢复")
+		utils.Err(c, utils.CodeForbidden, "无权恢复")
 		return
 	}
 	if err := database.RestoreMedia(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "恢复失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "恢复失败: "+err.Error())
 		return
 	}
 	// 审计双写
@@ -780,7 +780,7 @@ func (h *MediaHandler) Upload(c *gin.Context) {
 	storage := services.GetMediaStorage()
 	res, data, err := storage.SaveMediaFromMultipart(file)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "保存文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "保存文件失败: "+err.Error())
 		return
 	}
 
@@ -971,7 +971,7 @@ func (h *MediaHandler) CheckHash(c *gin.Context) {
 	}
 	m, err := database.GetMediaByHash(hash)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {

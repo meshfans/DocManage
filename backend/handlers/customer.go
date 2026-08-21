@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -151,7 +150,7 @@ func (h *CustomerHandler) GetCustomerByID(c *gin.Context) {
 	// 2026-07-07 round11：Create/Update/Delete 同步改为 RequirePermission("customer:create"/"customer:update"/"customer:delete")，
 	// 与 manager 角色 seed 中的权限码一致。
 	if !IsAdminUser(c) && !HasPermission(c, "customer:list") {
-		utils.Error(c, http.StatusForbidden, "需要管理员或 customer:list 权限")
+		utils.Err(c, utils.CodeForbidden, "需要管理员或 customer:list 权限")
 		return
 	}
 
@@ -225,6 +224,11 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 	}
 
 	services.PublishEvent("customer.update")
+	// 审计：customer update（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetCustomer, req.ID, "update", gin.H{
+		"real_name_len": len(req.RealName),
+		"phone_len":     len(req.Phone),
+	})
 	utils.Success(c, gin.H{
 		"message": "更新成功",
 	})
@@ -322,7 +326,7 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 
 	decodedSignature, err := base64.StdEncoding.DecodeString(signatureData)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "无效的签名数据")
+		utils.Err(c, utils.CodeInvalidParam, "无效的签名数据")
 		return
 	}
 
@@ -541,6 +545,12 @@ func (h *CustomerHandler) CreateCustomerExt(c *gin.Context) {
 	}
 
 	services.PublishEvent("customer.create")
+	// 审计：customer.ext create（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetCustomer, id, "create.ext", gin.H{
+		"snowid":        in.SnowID,
+		"customer_type": in.CustomerType,
+		"real_name_len": len(in.RealName),
+	})
 	utils.Success(c, gin.H{
 		"id":            id,
 		"snowid":        in.SnowID,
@@ -603,6 +613,10 @@ func (h *CustomerHandler) UpdateCustomerExt(c *gin.Context) {
 	}
 
 	services.PublishEvent("customer.update")
+	// 审计：customer.ext update（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetCustomer, req.ID, "update.ext", gin.H{
+		"real_name_len": len(req.CustomerInput.RealName),
+	})
 	utils.Success(c, gin.H{
 		"id":      req.ID,
 		"message": "更新成功",
@@ -673,7 +687,7 @@ func (h *CustomerHandler) SearchCustomersByTypeList(c *gin.Context) {
 
 	customers, total, err := database.SearchCustomersByType(pageInt, pageSizeInt, keyword, ctype)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "搜索客户失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "搜索客户失败: "+err.Error())
 		return
 	}
 

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net/http"
 	"strconv"
 
 	"doc/database"
@@ -21,7 +20,7 @@ func NewDepartmentHandler() *DepartmentHandler {
 func (h *DepartmentHandler) GetDepartmentTree(c *gin.Context) {
 	tree, err := database.GetDepartmentTree()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取部门树失败")
+		utils.Err(c, utils.CodeInternal, "获取部门树失败")
 		return
 	}
 
@@ -87,7 +86,7 @@ func (h *DepartmentHandler) CreateDepartment(c *gin.Context) {
 	maxLevel := services.GetMaxDepartmentLevel()
 	id, err := database.CreateDepartment(req.Name, req.ParentID, req.SortOrder, req.Status, maxLevel)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
+		utils.Err(c, utils.CodeInternal, err.Error())
 		return
 	}
 

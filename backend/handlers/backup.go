@@ -5,7 +5,6 @@ import (
 	"doc/database"
 	"doc/utils"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -77,16 +76,16 @@ func (h *BackupHandler) List(c *gin.Context) {
 func (h *BackupHandler) Detail(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "ID 无效")
+		utils.Err(c, utils.CodeInvalidParam, "ID 无效")
 		return
 	}
 	m, err := database.GetBackupManifestByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if m == nil {
-		utils.Error(c, http.StatusNotFound, "备份不存在")
+		utils.Err(c, utils.CodeBackupNotFound, "备份不存在")
 		return
 	}
 	utils.Success(c, m)

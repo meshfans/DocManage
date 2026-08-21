@@ -4,7 +4,6 @@ import (
 	"doc/database"
 	"doc/utils"
 	"errors"
-	"net/http"
 	"sync"
 	"time"
 
@@ -80,7 +79,7 @@ func (h *SystemConfigHandler) ListConfigs(c *gin.Context) {
 	}
 	metas, err := database.ListAllConfigMeta()
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "获取配置失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "获取配置失败: "+err.Error())
 		return
 	}
 	utils.Success(c, metas)
@@ -112,7 +111,7 @@ func (h *SystemConfigHandler) UpdateConfig(c *gin.Context) {
 			utils.BadRequest(c, "无效的 key: "+req.Key+"（不在 DEFAULT_CONFIGS 白名单中）")
 			return
 		}
-		utils.Error(c, http.StatusInternalServerError, "保存失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "保存失败: "+err.Error())
 		return
 	}
 	// 改后让 public cache 立刻失效，避免新值延迟生效（最坏情况 5s TTL 才能看到）
@@ -135,7 +134,7 @@ func (h *SystemConfigHandler) DeleteConfig(c *gin.Context) {
 	}
 	rowsAffected, err := database.DeleteSystemConfig(key)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除失败: "+err.Error())
 		return
 	}
 	// 删后让 public cache 立刻失效

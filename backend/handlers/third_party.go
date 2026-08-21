@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -100,6 +99,9 @@ func listThirdPartyContractsScoped(c *gin.Context, customerID int64, customerTyp
 // admin 看全部；非 admin 按 data_scope 过滤。
 // 资源列：owner=tpc.created_by，dept=tpc.department_id。
 func (h *ThirdPartyHandler) ListContracts(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:list") {
+		return
+	}
 	customerID, _ := strconv.ParseInt(c.Query("customer_id"), 10, 64)
 	customerType := c.Query("customer_type")
 	if customerType != "" && customerType != "individual" && customerType != "enterprise" {
@@ -123,7 +125,7 @@ func (h *ThirdPartyHandler) ListContracts(c *gin.Context) {
 	// data_scope 拼接逻辑抽到 listThirdPartyContractsScoped helper
 	list, total, err = listThirdPartyContractsScoped(c, customerID, customerType, status, search, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	// 防御性兜底：list 永不为 nil（DB 层已保证）
@@ -204,6 +206,11 @@ func (h *ThirdPartyHandler) loadCustomersForList(list []*models.ThirdPartyContra
 //	POST /api/third-party/contracts
 //	body: { contract_no?, title, type?, status?, customer_id, amount?, currency?, sign_date?, start_date?, end_date?, file_path?, file_size?, file_hash?, file_sha256?, file_combined_hash?, remark? }
 func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
+	// HP3（2026-08-20）：显式 RequirePermission 兜底，避免 APIGateMiddleware 路径配置错误导致越权。
+	// APIGate 也会校验，这里是双保险。
+	if !RequirePermission(c, "thirdparty:create") {
+		return
+	}
 	var req struct {
 		Title      string  `json:"title"`
 		Type       string  `json:"type"`
@@ -266,7 +273,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	// 校验 customer 存在
 	customer, err := database.GetCustomerByID(req.CustomerID)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询客户失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询客户失败: "+err.Error())
 		return
 	}
 	if customer == nil {
@@ -293,12 +300,22 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 	)
 	if err != nil {
 		// UNIQUE 冲突：合同号重复（极端并发）
-		utils.Error(c, http.StatusInternalServerError, "创建失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "创建失败: "+err.Error())
 		return
 	}
 	// 返回详情（含联表）
 	created, _ := database.GetThirdPartyContractByID(id)
 	services.PublishEvent("thirdparty.contract.create")
+	// 审计：第三方合同创建（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetThirdParty, id, "create", gin.H{
+		"contract_no": created.ContractNo,
+		"title":       req.Title,
+		"customer_id": req.CustomerID,
+		"type":        tpType,
+		"status":      tpStatus,
+		"amount":      req.Amount,
+		"currency":    currency,
+	})
 	utils.Success(c, gin.H{"id": id, "data": created})
 }
 
@@ -308,6 +325,9 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 //
 // owner-or-admin 或 data_scope 允许才能查看。
 func (h *ThirdPartyHandler) GetContract(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:detail") {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.BadRequest(c, "无效的 id")
@@ -315,15 +335,15 @@ func (h *ThirdPartyHandler) GetContract(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if t == nil {
-		utils.Error(c, http.StatusNotFound, "合同不存在")
+		utils.Err(c, utils.CodeContractNotFound, "合同不存在")
 		return
 	}
 	if !h.thirdPartyAccess(c, t) {
-		utils.Error(c, http.StatusForbidden, "无权访问此合同")
+		utils.Err(c, utils.CodeForbidden, "无权访问此合同")
 		return
 	}
 	utils.Success(c, t)
@@ -334,6 +354,9 @@ func (h *ThirdPartyHandler) GetContract(c *gin.Context) {
 //	POST /api/third-party/contracts/:id
 //	body: 同 CreateContract（不含 customer_id 必填校验）
 func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:update") {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.BadRequest(c, "无效的 id")
@@ -341,15 +364,15 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if t == nil {
-		utils.Error(c, http.StatusNotFound, "合同不存在")
+		utils.Err(c, utils.CodeContractNotFound, "合同不存在")
 		return
 	}
 	if !h.thirdPartyAccess(c, t) {
-		utils.Error(c, http.StatusForbidden, "无权修改")
+		utils.Err(c, utils.CodeForbidden, "无权修改")
 		return
 	}
 
@@ -407,11 +430,17 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 		req.SignDate, req.StartDate, req.EndDate,
 		req.Remark,
 	); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新失败: "+err.Error())
 		return
 	}
 	updated, _ := database.GetThirdPartyContractByID(id)
 	services.PublishEvent("thirdparty.contract.update")
+	// 审计：第三方合同更新（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetThirdParty, id, "update", gin.H{
+		"contract_no": updated.ContractNo,
+		"title":       req.Title,
+		"customer_id": req.CustomerID,
+	})
 	utils.Success(c, gin.H{"data": updated})
 }
 
@@ -420,6 +449,9 @@ func (h *ThirdPartyHandler) UpdateContract(c *gin.Context) {
 //	POST /api/third-party/contracts/:id/status
 //	body: { status }
 func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:status") {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.BadRequest(c, "无效的 id")
@@ -427,15 +459,15 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if t == nil {
-		utils.Error(c, http.StatusNotFound, "合同不存在")
+		utils.Err(c, utils.CodeContractNotFound, "合同不存在")
 		return
 	}
 	if !h.thirdPartyAccess(c, t) {
-		utils.Error(c, http.StatusForbidden, "无权操作")
+		utils.Err(c, utils.CodeForbidden, "无权操作")
 		return
 	}
 	var req struct {
@@ -451,14 +483,20 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 	}
 	ok, reason := models.TPStatusCanTransition(t.Status, req.Status)
 	if !ok {
-		utils.Error(c, http.StatusConflict, "状态转换失败: "+reason)
+		utils.Err(c, utils.CodeConflict, "状态转换失败: "+reason)
 		return
 	}
 	if err := database.UpdateThirdPartyContractStatus(id, req.Status); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "更新状态失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新状态失败: "+err.Error())
 		return
 	}
 	services.PublishEvent("thirdparty.contract.status.change")
+	// 审计：状态转换（HP2 补全）。
+	database.RecordAudit(c, database.AuditTargetThirdParty, id, "status.change", gin.H{
+		"contract_no": t.ContractNo,
+		"old_status":  t.Status,
+		"new_status":  req.Status,
+	})
 	utils.Success(c, gin.H{"message": "状态已更新", "status": req.Status})
 }
 
@@ -466,6 +504,9 @@ func (h *ThirdPartyHandler) ChangeStatus(c *gin.Context) {
 //
 //	POST /api/third-party/contracts/:id/delete
 func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:delete") {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.BadRequest(c, "无效的 id")
@@ -473,19 +514,19 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if t == nil {
-		utils.Error(c, http.StatusNotFound, "合同不存在")
+		utils.Err(c, utils.CodeContractNotFound, "合同不存在")
 		return
 	}
 	if !h.thirdPartyAccess(c, t) {
-		utils.Error(c, http.StatusForbidden, "无权删除")
+		utils.Err(c, utils.CodeForbidden, "无权删除")
 		return
 	}
 	if !models.TPStatusCanDelete(t.Status) {
-		utils.Error(c, http.StatusConflict, "只有草稿/已取消状态可删除")
+		utils.Err(c, utils.CodeConflict, "只有草稿/已取消状态可删除")
 		return
 	}
 	// 先删文件
@@ -494,7 +535,7 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 		utils.Warn("[third_party] 删除文件失败（继续删记录）: %v", err)
 	}
 	if err := database.DeleteThirdPartyContract(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "删除失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "删除失败: "+err.Error())
 		return
 	}
 	services.PublishEvent("thirdparty.contract.delete")
@@ -511,6 +552,9 @@ func (h *ThirdPartyHandler) DeleteContract(c *gin.Context) {
 //	body: { pdf_base64: "data:application/pdf;base64,..." | 纯 base64 }
 //	返回：{ file_size, file_hash, file_sha256, file_combined_hash, file_path }
 func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:upload") {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.BadRequest(c, "无效的 id")
@@ -518,15 +562,15 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if t == nil {
-		utils.Error(c, http.StatusNotFound, "合同不存在")
+		utils.Err(c, utils.CodeContractNotFound, "合同不存在")
 		return
 	}
 	if !h.thirdPartyAccess(c, t) {
-		utils.Error(c, http.StatusForbidden, "无权上传")
+		utils.Err(c, utils.CodeForbidden, "无权上传")
 		return
 	}
 
@@ -553,7 +597,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 		maxSize = config.GlobalConfig.Upload.MaxSize
 	}
 	if int64(len(pdfBytes)) > maxSize {
-		utils.Error(c, http.StatusRequestEntityTooLarge,
+		utils.Err(c, utils.CodeMediaTooLarge,
 			fmt.Sprintf("PDF 超过 %d MB（cfg.Upload.MaxSize）", maxSize/1024/1024))
 		return
 	}
@@ -573,7 +617,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	snowid := strings.TrimPrefix(t.ContractNo, "TP-")
 	_, relPath, err := storage.SaveThirdPartyAsset(pdfBytes, snowid)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "保存文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "保存文件失败: "+err.Error())
 		return
 	}
 	// 5. 算 3 哈希（写文件后直接用文件路径）
@@ -581,7 +625,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	if pathErr != nil {
 		// P0 修复（2026-06-28）：路径非法 → 500（理论不可能，relPath 由 SaveThirdPartyAsset 生成）
 		utils.LogError("[third_party.Upload] 路径非法 id=%d: %v", id, pathErr)
-		utils.Error(c, http.StatusInternalServerError, "保存路径异常")
+		utils.Err(c, utils.CodeInternal, "保存路径异常")
 		return
 	}
 	hashService := services.NewHashService(true, true)
@@ -589,7 +633,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 	if err != nil {
 		// 文件已存但算 hash 失败：回滚
 		_ = storage.DeleteFile(relPath)
-		utils.Error(c, http.StatusInternalServerError, "算哈希失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "算哈希失败: "+err.Error())
 		return
 	}
 	// 6. 更新 DB
@@ -598,7 +642,7 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 		hash.SM3Hash, hash.SHA256Hash, hash.CombinedHash,
 	); err != nil {
 		_ = storage.DeleteFile(relPath)
-		utils.Error(c, http.StatusInternalServerError, "更新文件字段失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "更新文件字段失败: "+err.Error())
 		return
 	}
 
@@ -645,6 +689,9 @@ func (h *ThirdPartyHandler) UploadFile(c *gin.Context) {
 //
 // owner-or-admin / data_scope 校验：非 owner 且 data_scope 不允许则 403。
 func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:download") {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.BadRequest(c, "无效的 id")
@@ -652,20 +699,20 @@ func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
 	}
 	t, err := database.GetThirdPartyContractByID(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 		return
 	}
 	if t == nil {
-		utils.Error(c, http.StatusNotFound, "合同不存在")
+		utils.Err(c, utils.CodeContractNotFound, "合同不存在")
 		return
 	}
 	if !h.thirdPartyAccess(c, t) {
-		utils.Error(c, http.StatusForbidden, "无权下载此合同")
+		utils.Err(c, utils.CodeForbidden, "无权下载此合同")
 		return
 	}
 
 	if t.FilePath == "" {
-		utils.Error(c, http.StatusNotFound, "该合同尚未上传文件")
+		utils.Err(c, utils.CodeNotFound, "该合同尚未上传文件")
 		return
 	}
 	storage := services.GetThirdPartyStorage()
@@ -673,11 +720,11 @@ func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
 	if err != nil {
 		// P0 修复（2026-06-28）：路径非法 → 404 不暴露内部细节
 		utils.Warn("[third_party.Download] 路径非法 id=%d: %v", id, err)
-		utils.Error(c, http.StatusNotFound, "文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "文件不存在")
 		return
 	}
 	if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
-		utils.Error(c, http.StatusNotFound, "文件不存在")
+		utils.Err(c, utils.CodeMediaNotFound, "文件不存在")
 		return
 	}
 	// 用 t.ContractNo 作为下载文件名
@@ -693,6 +740,9 @@ func (h *ThirdPartyHandler) DownloadFile(c *gin.Context) {
 //	body: { ids?: [], search?, status?, customer_id? }
 //	返回：application/zip 流
 func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
+	if !RequirePermission(c, "thirdparty:bulk-download") {
+		return
+	}
 	var req struct {
 		IDs        []int64 `json:"ids"`
 		Search     string  `json:"search"`
@@ -712,7 +762,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 		contracts, terr := database.GetThirdPartyContractsByIDs(req.IDs)
 		if terr != nil {
 			utils.Warn("[third_party.BulkDownload] GetThirdPartyContractsByIDs 失败 ids=%v err=%v", req.IDs, terr)
-			utils.Error(c, http.StatusInternalServerError, "查询失败: "+terr.Error())
+			utils.Err(c, utils.CodeInternal, "查询失败: "+terr.Error())
 			return
 		}
 		// 用 id 索引方便 O(1) 查找
@@ -735,7 +785,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 		if len(deniedIDs) > 0 {
 			utils.Warn("[third_party.BulkDownload] 部分 id 拒绝访问 user_id=%d denied=%v allowed=%v",
 				c.GetInt64("user_id"), deniedIDs, len(req.IDs)-len(deniedIDs))
-			utils.Error(c, http.StatusForbidden,
+			utils.Err(c, utils.CodeForbidden,
 				fmt.Sprintf("无权访问 %d/%d 个合同 (被拒 ids=%v)", len(deniedIDs), len(req.IDs), deniedIDs))
 			return
 		}
@@ -748,7 +798,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 		var err error
 		list, _, err = listThirdPartyContractsScoped(c, req.CustomerID, "", req.Status, req.Search, 1, 1000)
 		if err != nil {
-			utils.Error(c, http.StatusInternalServerError, "查询失败: "+err.Error())
+			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
 			return
 		}
 		for _, t := range list {
@@ -757,18 +807,18 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 	}
 
 	if len(ids) == 0 {
-		utils.Error(c, http.StatusNotFound, "没有可下载的合同")
+		utils.Err(c, utils.CodeNotFound, "没有可下载的合同")
 		return
 	}
 
 	// 拿文件信息
 	files, err := database.ListThirdPartyContractFiles(ids)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "查询文件失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "查询文件失败: "+err.Error())
 		return
 	}
 	if len(files) == 0 {
-		utils.Error(c, http.StatusNotFound, "没有可下载的文件")
+		utils.Err(c, utils.CodeNotFound, "没有可下载的文件")
 		return
 	}
 
@@ -781,7 +831,7 @@ func (h *ThirdPartyHandler) BulkDownload(c *gin.Context) {
 	// 简单的非流式 ZIP（文件数 < 100 时足够用；大文件场景可优化为 archive/zip 流式 writer）
 	zipData, skipped, err := buildZipFromFiles(storage, files)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "打包失败: "+err.Error())
+		utils.Err(c, utils.CodeInternal, "打包失败: "+err.Error())
 		return
 	}
 	// P1 修复（2026-06-28）：若部分文件失败（路径非法 / 文件丢失），告知用户。
