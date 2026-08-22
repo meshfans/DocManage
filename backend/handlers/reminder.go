@@ -406,10 +406,14 @@ func (h *ReminderHandler) CreateSubscription(c *gin.Context) {
 			utils.Err(c, utils.CodeInvalidParam, "receiver_type=department 时 receiver_id 必填（部门 ID，多个用逗号分隔）")
 			return
 		}
-		// 校验每个部门都存在
+		// 批量校验部门存在性（避免 N+1）。
+		deptMap, err := database.GetDepartmentsByIDs(ids)
+		if err != nil {
+			utils.Err(c, utils.CodeInternal, "部门查询失败: "+err.Error())
+			return
+		}
 		for _, deptID := range ids {
-			dept, err := database.GetDepartmentByID(deptID)
-			if err != nil || dept == nil {
+			if _, ok := deptMap[deptID]; !ok {
 				utils.Err(c, utils.CodeInvalidParam, fmt.Sprintf("部门 #%d 不存在", deptID))
 				return
 			}

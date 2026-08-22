@@ -158,6 +158,13 @@ func (h *ScheduledTaskHandler) CreateTask(c *gin.Context) {
 	}
 	t.ID = id
 
+	// 审计：定时任务创建。
+	database.RecordAudit(c, database.AuditTargetScheduledTask, id, "create", gin.H{
+		"task_key":     req.TaskKey,
+		"handler_name": req.HandlerName,
+		"cron_expr":    req.CronExpr,
+	})
+
 	// 重新加载到调度器
 	if s := services.GetScheduler(); s != nil {
 		if err := s.AddOrUpdateTask(t); err != nil {
@@ -376,6 +383,10 @@ func (h *ScheduledTaskHandler) RunNow(c *gin.Context) {
 		utils.Err(c, utils.CodeInvalidParam, err.Error())
 		return
 	}
+	// 审计：手动触发定时任务。
+	database.RecordAudit(c, database.AuditTargetScheduledTask, id, "run.manual", gin.H{
+		"operator_id": operatorID,
+	})
 	utils.Success(c, gin.H{"id": id, "triggered_by": "manual", "operator_id": operatorID})
 }
 

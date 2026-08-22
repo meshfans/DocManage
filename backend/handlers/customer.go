@@ -416,7 +416,10 @@ func (h *CustomerHandler) UploadSignature(c *gin.Context) {
 	adminUser, _ := database.GetUserByUsername("admin")
 	if adminUser != nil {
 		msg := fmt.Sprintf("%s 上传了签名照片", customer.RealName)
-		_, _ = database.CreateMessage(adminUser.ID, req.CustomerID, "签名上传通知", msg, "signature")
+		_, notifyErr := database.CreateMessage(adminUser.ID, req.CustomerID, "签名上传通知", msg, "signature")
+		if notifyErr != nil {
+			utils.Warn("[customer.UploadSignature] 通知 admin 失败: customerID=%d, err=%v", req.CustomerID, notifyErr)
+		}
 	}
 
 	services.PublishEvent("customer.signature.upload")

@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -58,6 +59,35 @@ func GetDepartmentByID(id int64) (*Department, error) {
 		return nil, err
 	}
 	return dept, nil
+}
+
+// GetDepartmentsByIDs 批量查询部门（用于 CreateSubscription 权限预检，避免 N+1）。
+func GetDepartmentsByIDs(ids []int64) (map[int64]*Department, error) {
+	if len(ids) == 0 {
+		return make(map[int64]*Department), nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := `SELECT id, name, parent_id, level, sort_order, status, created_at, updated_at
+		  FROM department WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	rows, err := DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[int64]*Department)
+	for rows.Next() {
+		d := &Department{}
+		if err := rows.Scan(&d.ID, &d.Name, &d.ParentID, &d.Level, &d.SortOrder, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		result[d.ID] = d
+	}
+	return result, nil
 }
 
 // GetAllDepartments 返回全部部门，按 level/sort_order 排序便于前端展示层级。

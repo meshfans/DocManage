@@ -501,7 +501,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	utils.Warn("[Auth.ChangePassword] 密码修改成功: userID=%d, username=%s", uid, username)
+	utils.Warn("[Auth.ChangePassword] 密码修改成功: userID=%d, username=%s", userID, username)
 	utils.Success(c, gin.H{"message": "密码修改成功"})
 }
 

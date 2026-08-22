@@ -216,6 +216,81 @@ func GetMediaByHash(hashSHA256 string) (*models.Media, error) {
 	return m, nil
 }
 
+// GetMediaByIDs 批量查询媒体（用于 Bulk handler 的权限预检，避免 N+1）。
+// 漏查的 ID（即 map 中不存在）视为不存在，返回 nil map。
+func GetMediaByIDs(ids []int64) (map[int64]*models.Media, error) {
+	if len(ids) == 0 {
+		return make(map[int64]*models.Media), nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := `SELECT ` + mediaCols + ` FROM media WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	rows, err := DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[int64]*models.Media)
+	for rows.Next() {
+		m := &models.Media{}
+		if err := scanMediaRows(rows, m); err != nil {
+			return nil, err
+		}
+		result[m.ID] = m
+	}
+	return result, nil
+}
+
+// scanMediaRows 批量行扫描（对应 mediaCols 列顺序）。
+func scanMediaRows(rows *sql.Rows, m *models.Media) error {
+	var tagsJSON, bindingsJSON, auditJSON string
+	var _createdAt, _updatedAt interface{}
+	if err := rows.Scan(
+		&m.ID, &m.SnowID, &m.Type, &m.Name, &m.OriginalName, &m.MimeType,
+		&m.FilePath, &m.ThumbPath, &m.FileSize, &m.Width, &m.Height, &m.Duration,
+		&m.HashSM3, &m.HashSHA256, &m.HashCombined,
+		&m.Source, &m.SourceRef, &m.WatermarkText, &m.WatermarkMode,
+		&m.TakenAt, &m.TakenBy,
+		&m.CustomerID, &m.UserID, &m.DepartmentID,
+		&tagsJSON, &bindingsJSON, &auditJSON,
+		&m.ViewCount, &m.DownloadCount,
+		&m.Remark, &m.Status,
+		&m.CreatedBy, &_createdAt, &_updatedAt, &m.DeletedAt,
+	); err != nil {
+		return err
+	}
+	// created_at / updated_at：兼容 string 和 int64（与 scanMediaRow 一致）
+	if s, ok := _createdAt.(string); ok {
+		if t, err := parseLocalDateTime(s); err == nil {
+			m.CreatedAt = t
+		}
+	} else if n, ok := toInt64(_createdAt); ok {
+		m.CreatedAt = n
+	}
+	if s, ok := _updatedAt.(string); ok {
+		if t, err := parseLocalDateTime(s); err == nil {
+			m.UpdatedAt = t
+		}
+	} else if n, ok := toInt64(_updatedAt); ok {
+		m.UpdatedAt = n
+	}
+	// JSON 列解析
+	if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
+		m.Tags = nil
+	}
+	if err := json.Unmarshal([]byte(bindingsJSON), &m.Bindings); err != nil {
+		m.Bindings = nil
+	}
+	if err := json.Unmarshal([]byte(auditJSON), &m.Audit); err != nil {
+		m.Audit = nil
+	}
+	return nil
+}
+
 // MediaFilter 列表过滤条件（对应 query string 参数）。
 type MediaFilter struct {
 	Type       string   // photo / video / audio / "" = 全部

@@ -208,7 +208,11 @@ func (h *MediaHandler) Get(c *gin.Context) {
 	currentUserID := c.GetInt64("user_id")
 	_ = database.IncrementViewCountWithAudit(id, currentUserID, c.ClientIP(), c.GetHeader("User-Agent"))
 	// 重新读（updated audit / view_count）
-	m, _ = database.GetMediaByID(id)
+	m, err = database.GetMediaByID(id)
+	if err != nil {
+		utils.Err(c, utils.CodeNotFound, "文件不存在或已被删除")
+		return
+	}
 
 	utils.Success(c, m)
 }
@@ -445,16 +449,17 @@ func (h *MediaHandler) BulkAddTag(c *gin.Context) {
 		utils.Err(c, utils.CodeInvalidParam, "ids 和 tag_name 必填")
 		return
 	}
-	// 权限校验：每个 id 都得是本人或 admin
+	// 权限校验：一次性批量查完，避免 N+1。
 	currentUserID := c.GetInt64("user_id")
 	isAdmin := IsAdminUser(c)
+	mediaMap, err := database.GetMediaByIDs(req.IDs)
+	if err != nil {
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
+		return
+	}
 	for _, id := range req.IDs {
-		m, err := database.GetMediaByID(id)
-		if err != nil {
-			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
-			return
-		}
-		if m == nil {
+		m, ok := mediaMap[id]
+		if !ok {
 			utils.Err(c, utils.CodeInvalidParam, "媒体不存在: id="+strconv.FormatInt(id, 10))
 			return
 		}
@@ -495,13 +500,14 @@ func (h *MediaHandler) BulkDelete(c *gin.Context) {
 	}
 	currentUserID := c.GetInt64("user_id")
 	isAdmin := IsAdminUser(c)
+	mediaMap, err := database.GetMediaByIDs(req.IDs)
+	if err != nil {
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
+		return
+	}
 	for _, id := range req.IDs {
-		m, err := database.GetMediaByID(id)
-		if err != nil {
-			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
-			return
-		}
-		if m == nil {
+		m, ok := mediaMap[id]
+		if !ok {
 			continue // 已删项跳过
 		}
 		if !isAdmin && m.TakenBy != 0 && m.TakenBy != currentUserID {
@@ -559,13 +565,14 @@ func (h *MediaHandler) BulkSetCustomer(c *gin.Context) {
 	}
 	currentUserID := c.GetInt64("user_id")
 	isAdmin := IsAdminUser(c)
+	mediaMap, err := database.GetMediaByIDs(req.IDs)
+	if err != nil {
+		utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
+		return
+	}
 	for _, id := range req.IDs {
-		m, err := database.GetMediaByID(id)
-		if err != nil {
-			utils.Err(c, utils.CodeInternal, "查询失败: "+err.Error())
-			return
-		}
-		if m == nil {
+		m, ok := mediaMap[id]
+		if !ok {
 			continue
 		}
 		if !isAdmin && m.TakenBy != 0 && m.TakenBy != currentUserID {

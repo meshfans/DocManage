@@ -127,6 +127,12 @@ func (h *MessageHandler) CreateMessage(c *gin.Context) {
 		utils.Err(c, utils.CodeInternal, "创建消息失败: "+err.Error())
 		return
 	}
+	// 审计：消息创建（sender 发给 receiver，可追踪消息发送行为）。
+	database.RecordAudit(c, database.AuditTargetSystem, id, "message.create", gin.H{
+		"receiver_id": req.UserID,
+		"title":       req.Title,
+		"type":        msgType,
+	})
 
 	// WebSocket 实时推送：接收人在线时立即推一条 new_message，前端铃铛即时更新。
 	// 离线则下次拉取 getUnreadCount 兜底，SendToUser 内部已是非阻塞。

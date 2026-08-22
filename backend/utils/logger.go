@@ -180,7 +180,6 @@ func (l *Logger) getLogFileName() string {
 
 func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
 	if level < l.logLevel {
-		log.Println(l.logLevel.String())
 		return
 	}
 

@@ -280,7 +280,8 @@ func (h *SystemHandler) SaveConfigFile(c *gin.Context) {
 		utils.Err(c, utils.CodeInternal, "写入配置文件失败: "+err.Error())
 		return
 	}
-
+	// 审计：配置文件保存（高危操作，写磁盘）。
+	database.RecordAudit(c, database.AuditTargetSystem, 0, "config.save", nil)
 	utils.Success(c, gin.H{
 		"message": "配置文件保存成功",
 	})
@@ -376,6 +377,13 @@ func (h *SystemHandler) RestoreFromBackup(c *gin.Context) {
 		return
 	}
 
+	// 审计：数据库恢复（最高危操作）。
+	database.RecordAudit(c, database.AuditTargetBackup, req.FullBackupID, "restore.execute", gin.H{
+		"operator_id":   operatorID,
+		"full_backup_id": req.FullBackupID,
+		"dry_run":       req.DryRun,
+	})
+
 	utils.Success(c, result)
 }
 
@@ -415,6 +423,12 @@ func (h *SystemHandler) SetMaintenanceMode(c *gin.Context) {
 	prev := config.IsMaintenanceMode()
 	config.SetMaintenanceMode(req.Enabled)
 
+	// 审计：维护模式切换。
+	database.RecordAudit(c, database.AuditTargetSystem, 0, "maintenance.set", gin.H{
+		"prev":  prev,
+		"now":   req.Enabled,
+		"reason": req.Reason,
+	})
 	utils.Info("[Maintenance] mode changed: %v → %v, reason: %s",
 		prev, req.Enabled, req.Reason)
 
