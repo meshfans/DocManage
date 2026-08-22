@@ -47,7 +47,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, err := database.GetUserByUsername(req.Username)
 	if err != nil {
-		utils.Info("Login failed: user not found - %s\n", req.Username)
+		utils.Warn("[Auth.Login] 用户不存在: username=%s", req.Username)
 		// 审计：登录失败（用户不存在，actor_user_id=0；target_id=0）。
 		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "login.failed", gin.H{
 			"username": req.Username,
@@ -76,7 +76,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
-		utils.Info("Login failed: wrong password - %s\n", req.Username)
+		utils.Warn("[Auth.Login] 密码错误: username=%s", req.Username)
 		// 审计：登录失败（密码错误；actor 与 target 都是 user.ID）。
 		database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.failed", gin.H{
 			"username": req.Username,
@@ -143,7 +143,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			// event label 不同便于监控告警（如"短期内大量 unlock"可能是误锁定激增）。
 			if user.LockedUntil > 0 {
 				services.PublishEvent("auth.login.unlocked")
-				utils.Info("[Auth.Login] 用户从锁定恢复: username=%s", user.Username)
+				utils.Warn("[Auth.Login] 用户从锁定恢复: username=%s", user.Username)
 			} else {
 				services.PublishEvent("auth.login.reset_counter")
 			}
@@ -152,14 +152,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	accessToken, accessExpires, err := h.jwtUtils.GenerateAccessToken(user.ID, user.Username)
 	if err != nil {
-		utils.Info("Failed to generate access token: %v\n", err)
+		utils.Warn("[Auth.Login] 生成 access token 失败: userID=%d, err=%v", user.ID, err)
 		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
 
 	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(user.ID, user.Username)
 	if err != nil {
-		utils.Info("Failed to generate refresh token: %v\n", err)
+		utils.Warn("[Auth.Login] 生成 refresh token 失败: userID=%d, err=%v", user.ID, err)
 		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
@@ -185,7 +185,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		PermissionVersion: getPermissionVersion(),
 	}
 
-	utils.Info("User logged in: %s\n", user.Username)
+	utils.Warn("[Auth.Login] 登录成功: userID=%d, username=%s, ip=%s", user.ID, user.Username, c.ClientIP())
 	// 审计：登录成功。/login 不走 JWTAuth 中间件，c.Get("user_id") 取不到 → 用 RecordAuditBy 显式传 actor_user_id。
 	database.RecordAuditBy(c, user.ID, database.AuditTargetAuth, user.ID, "login.success", gin.H{
 		"username": user.Username,
@@ -236,7 +236,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	claims, err := h.jwtUtils.ValidateToken(req.RefreshToken)
 	if err != nil {
-		utils.Info("Refresh token validation failed: %v\n", err)
+		utils.Warn("[Auth.Refresh] Token 校验失败: err=%v", err)
 		// Issue #4：refresh 失败也要留痕，便于检测 token 暴力刷取
 		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "refresh.failed", gin.H{
 			"reason": "validate_failed",
@@ -247,7 +247,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	if claims.TokenType != "refresh" {
-		utils.Info("Invalid token type for refresh")
+		utils.Warn("[Auth.Refresh] Token 类型错误: got=%s", claims.TokenType)
 		// Issue #4：token type 不符视为 refresh.failed
 		database.RecordAuditBy(c, 0, database.AuditTargetAuth, 0, "refresh.failed", gin.H{
 			"reason":      "wrong_token_type",
@@ -259,7 +259,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	accessToken, accessExpires, err := h.jwtUtils.GenerateAccessToken(claims.UserID, claims.Username)
 	if err != nil {
-		utils.Info("Failed to generate access token: %v\n", err)
+		utils.Warn("[Auth.Refresh] 生成 access token 失败: userID=%d, err=%v", claims.UserID, err)
 		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
@@ -273,7 +273,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	// 配合入口的 IsTokenRevoked 检查，攻击者拿旧 token 来 refresh 必 401。
 	refreshToken, _, err := h.jwtUtils.GenerateRefreshToken(claims.UserID, claims.Username)
 	if err != nil {
-		utils.Info("Failed to generate refresh token: %v\n", err)
+		utils.Warn("[Auth.Refresh] 生成 refresh token 失败: userID=%d, err=%v", claims.UserID, err)
 		utils.Err(c, utils.CodeInternal, "Failed to generate token")
 		return
 	}
@@ -292,7 +292,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		Expires:      expires,
 	}
 
-	utils.Info("Token refreshed for user: %s\n", claims.Username)
+	utils.Warn("[Auth.Refresh] Token 刷新成功: userID=%d, username=%s, ip=%s", claims.UserID, claims.Username, c.ClientIP())
 	// Issue #4：refresh 是高敏感事件，模型字典已声明 refresh.success/failed。
 	database.RecordAuditBy(c, claims.UserID, database.AuditTargetAuth, claims.UserID, "refresh.success", gin.H{
 		"username": claims.Username,
@@ -349,7 +349,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		// 黑名单 TTL = access token 剩余有效期
 		utils.RevokeToken(token, time.Now().Add(h.jwtUtils.GetAccessExpire()).Unix())
-		utils.Info("[Auth.Logout] access token 已加入黑名单: user=%s, ip=%s",
+		utils.Warn("[Auth.Logout] access token 已加入黑名单: user=%s, ip=%s",
 			c.GetString("username"), c.ClientIP())
 	}
 
@@ -501,7 +501,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	utils.Info("Password changed for user: %s\n", username)
+	utils.Warn("[Auth.ChangePassword] 密码修改成功: userID=%d, username=%s", uid, username)
 	utils.Success(c, gin.H{"message": "密码修改成功"})
 }
 
