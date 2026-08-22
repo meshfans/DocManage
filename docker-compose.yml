@@ -1,0 +1,78 @@
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # DocServer（后端）
+  # ---------------------------------------------------------------------------
+  # 首次启动前需创建 Dockerfile（multi-stage build 或 distroless）：
+  #   docker build -t docmanage-docserver:latest ./backend/
+  doc-server:
+    build:
+      context: ./backend
+      # Dockerfile 放在 backend/Dockerfile（需另行创建）
+      dockerfile: Dockerfile
+    container_name: doc-server
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      # Phase 4b (High #15)：JWT_SECRET 强制注入（不允许为空）
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      # 可选：本地开发覆盖（生产必须通过 JWT_SECRET env）
+      # - GIN_MODE=release
+    volumes:
+      # backend/bin/：工作目录（uploads/、data/、logs/、backups/、certs/）
+      - ./backend/bin:/app/bin
+    depends_on:
+      - prometheus
+
+  # ---------------------------------------------------------------------------
+  # Prometheus（指标采集 + 告警规则）
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: doc-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      # prometheus.yml：指标采集配置
+      - ./backend/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Phase 5a (High #9)：告警规则挂载
+      # alerts.yml 包含 5 条告警规则：
+      #   DocServerJWTRejectionsSpike / DocServerJWTInvalidIssuerSpike /
+      #   DocServerAccountLockoutsSpike / DocServerWORMLockFailed /
+      #   DocServerHighErrorRate
+      - ./backend/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # prometheus 数据的持久化（可选）
+      # - prometheus-data:/prometheus
+    command:
+      # 显式指定配置文件（--config.file 优先级高于默认 prometheus.yml）
+      - --config.file=/etc/prometheus/prometheus.yml
+      # 加载 /etc/prometheus/ 下所有 .yml/.yaml（告警规则）
+      - --storage.tsdb.path=/prometheus
+      # 历史数据保留 15 天
+      - --storage.tsdb.retention.time=15d
+      # Web UI
+      - --web.enable-lifecycle
+
+# 未实现的服务（占位，后续集成）
+#
+#   grafana:
+#     image: grafana/grafana:11.4.0
+#     container_name: doc-grafana
+#     ports:
+#       - "3000:3000"
+#     volumes:
+#       - ./backend/monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/docserver.json:ro
+#     depends_on:
+#       - prometheus
+#
+#   jaeger:
+#     image: jaegertracing/all-in-one:1.60
+#     container_name: doc-jaeger
+#     ports:
+#       - "16686:16686"   # UI
+#       - "4317:4317"     # OTLP gRPC
+#     environment:
+#       - COLLECTOR_OTLP_ENABLED=true
