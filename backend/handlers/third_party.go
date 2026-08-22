@@ -282,10 +282,7 @@ func (h *ThirdPartyHandler) CreateContract(c *gin.Context) {
 		utils.BadRequest(c, "客户不存在")
 		return
 	}
-	// 校验合同号（用户提供或自动生成）+ UNIQUE
-	contractNo := strings.TrimSpace(req.FilePath) // 防呆：避免 contractNo 字段被用错
-	_ = contractNo
-	// 合同号独立生成
+	// 合同号独立生成（不复用 req.FilePath，避免语义混淆）
 	contractNoFinal := generateContractNo()
 	currentUserID := c.GetInt64("user_id")
 	// 创建时快照当前用户主部门，供 data_scope 过滤使用。
