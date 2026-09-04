@@ -6,6 +6,7 @@ import { MotionPlugin } from "@vueuse/motion";
 import { createApp, type Directive } from "vue";
 import { useElementPlus } from "@/plugins/elementPlus";
 import { injectResponsiveStorage } from "@/utils/responsive";
+import { refreshNotificationSoundPref } from "@/utils/notificationSound";
 
 // 引入重置样式
 import "./style/reset.scss";
@@ -44,6 +45,9 @@ app.use(VueTippy);
 
 getPlatformConfig(app).then(async config => {
   setupStore(app);
+  // 首屏拉一次 system_config.public（5s 后端缓存，admin 改完即生效）
+  // 无 await：拉配置失败不阻塞启动，notificationSound 内已 catch 降级
+  refreshNotificationSoundPref();
   app.use(router);
   await router.isReady();
   injectResponsiveStorage(app, config);

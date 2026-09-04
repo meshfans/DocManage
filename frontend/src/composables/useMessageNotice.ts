@@ -8,6 +8,7 @@ import {
 } from "@/api/message";
 import { wsService, type WebSocketMessage } from "@/utils/websocket";
 import { getToken } from "@/utils/auth";
+import { playNewMessageSound } from "@/utils/notificationSound";
 
 /**
  * 顶部铃铛 / 消息提醒的统一 composable（2026-09-04 重构）。
@@ -110,6 +111,9 @@ export function useMessageNotice() {
     });
     // 角标交给 DB：每次 WS 推送后重新拉一次，与 DB 严格对齐
     refreshUnread();
+    // 统一播放提示音（admin 可在 系统配置 > 业务配置 关掉）
+    // 实现细节：utils/notificationSound.ts（Web Audio API 机器合成）
+    playNewMessageSound();
   }
 
   // ---- lifecycle: 注册 / 解绑 WS 订阅 ----

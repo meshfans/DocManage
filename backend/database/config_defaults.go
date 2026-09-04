@@ -31,6 +31,9 @@ var DEFAULT_CONFIGS = map[string]ConfigDefault{
 
 
 
+	// ========== 通知 ==========
+	"notification_sound_enabled": {"true", "通知", "新消息提示音：true=开启 / false=关闭（前端 Web Audio API 机器合成）"},
+
 	// ========== 未来扩展预留（备份 / 通知等） ==========
 	// "backup_retention_days":        {"7",   "备份",   "备份保留天数"},
 	// "notification_email_enabled":   {"false", "通知", "启用邮件通知"},
