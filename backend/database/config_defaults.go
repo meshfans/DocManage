@@ -10,33 +10,33 @@ package database
 // 添加新配置 key 只需在这里加一行，无需改 SQL/迁移。
 
 type ConfigDefault struct {
-	Value       string // 兜底值（DB 无覆盖时使用）
-	Category    string // 业务分类：用于前端"业务配置"页分组展示
-	Description string // 中文说明（前端 hover tooltip 展示）
+	Value       string   // 兜底值（DB 无覆盖时使用）
+	Category    string   // 业务分类：用于前端"业务配置"页分组展示
+	Description string   // 中文说明（前端 hover tooltip 展示）
+	ValueType   string   // 值类型：text（默认）| bool | enum | number
+	EnumOptions []string // 枚举选项列表（仅 value_type=enum 时有效）
 }
 
 var DEFAULT_CONFIGS = map[string]ConfigDefault{
 	// ========== 企业基本信息 ==========
-	"company_name":       {"示例科技有限公司", "企业信息", "公司完整名称"},
-	"company_short_name": {"示例公司", "企业信息", "公司简称（短）"},
-	"tax_id":             {"91110000XXXXXXXXXX", "企业信息", "统一社会信用代码 / 税号（18 位）"},
-	"legal_person":       {"张三", "企业信息", "法人代表姓名"},
-	"legal_person_id":    {"", "企业信息", "法人代表身份证号"},
-	"registered_address": {"", "企业信息", "公司注册地址"},
-	"company_size":       {"medium", "企业信息", "公司规模：small / medium / large"},
-	"industry":           {"互联网", "企业信息", "所属行业"},
-	"contact_phone":      {"", "企业信息", "联系电话"},
-	"contact_email":      {"", "企业信息", "联系邮箱"},
-	"contact_website":    {"", "企业信息", "公司网站"},
-
-
+	"company_name":        {"示例科技有限公司", "企业信息", "公司完整名称", "text", nil},
+	"company_short_name":  {"示例公司", "企业信息", "公司简称（短）", "text", nil},
+	"tax_id":              {"91110000XXXXXXXXXX", "企业信息", "统一社会信用代码 / 税号（18 位）", "text", nil},
+	"legal_person":        {"张三", "企业信息", "法人代表姓名", "text", nil},
+	"legal_person_id":     {"", "企业信息", "法人代表身份证号", "text", nil},
+	"registered_address":  {"", "企业信息", "公司注册地址", "text", nil},
+	"company_size":        {"medium", "企业信息", "公司规模", "enum", []string{"small", "medium", "large"}},
+	"industry":            {"互联网", "企业信息", "所属行业", "text", nil},
+	"contact_phone":       {"", "企业信息", "联系电话", "text", nil},
+	"contact_email":       {"", "企业信息", "联系邮箱", "text", nil},
+	"contact_website":     {"", "企业信息", "公司网站", "text", nil},
 
 	// ========== 通知 ==========
-	"notification_sound_enabled": {"true", "通知", "新消息提示音：true=开启 / false=关闭（前端 Web Audio API 机器合成）"},
+	"notification_sound_enabled": {"true", "通知", "新消息提示音", "bool", nil},
 
 	// ========== 未来扩展预留（备份 / 通知等） ==========
-	// "backup_retention_days":        {"7",   "备份",   "备份保留天数"},
-	// "notification_email_enabled":   {"false", "通知", "启用邮件通知"},
+	// "backup_retention_days":        {"7",   "备份",   "备份保留天数", "number", nil},
+	// "notification_email_enabled":   {"false", "通知", "启用邮件通知", "bool", nil},
 }
 
 // GetConfigDefaultValue 简化：只取 Value，未注册 key 返回 ""。

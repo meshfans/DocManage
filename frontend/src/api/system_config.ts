@@ -12,6 +12,10 @@ export type ConfigMeta = {
   description: string;
   category: string;
   is_overridden: boolean;
+  /** 值类型：text | bool | enum | number */
+  value_type: "text" | "bool" | "enum" | "number";
+  /** 枚举选项（仅 value_type=enum 时非空） */
+  enum_options?: string[];
 };
 
 // 公开端点：所有登录用户可读（前端启动时调，决策 UI 行为）

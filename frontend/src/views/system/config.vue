@@ -26,9 +26,12 @@ const businessSaving = ref(false);
 const businessEditDialog = reactive({
   visible: false,
   key: "",
-  value: "",
+  /** 值：文本框为 string，数字输入为 number */
+  value: "" as string | number,
   defaultValue: "",
-  description: ""
+  description: "",
+  valueType: "text" as "text" | "bool" | "enum" | "number",
+  enumOptions: [] as string[]
 });
 
 async function loadBusinessConfigs() {
@@ -61,6 +64,8 @@ function openBusinessEdit(row: ConfigMeta) {
   businessEditDialog.value = row.value;
   businessEditDialog.defaultValue = row.default_value;
   businessEditDialog.description = row.description;
+  businessEditDialog.valueType = row.value_type || "text";
+  businessEditDialog.enumOptions = row.enum_options || [];
   businessEditDialog.visible = true;
 }
 
@@ -68,11 +73,12 @@ async function saveBusinessEdit() {
   if (!businessEditDialog.key) return;
   businessSaving.value = true;
   try {
-    // 前后 trim（防御性：避免误填空格进 DB；与后端 SetSystemConfig 的 TrimSpace 对齐）
-    const trimmed = businessEditDialog.value.trim();
+    // 前后 trim（仅 text 类型；bool/enum/number 无需 trim）
+    const rawValue = businessEditDialog.value;
+    const saveValue = typeof rawValue === "string" ? rawValue.trim() : String(rawValue);
     const res = await updateSystemConfig(
       businessEditDialog.key,
-      trimmed
+      saveValue
     );
     if (res.success) {
       ElMessage.success("保存成功");
@@ -796,7 +802,39 @@ onMounted(() => {
                 <code>{{ businessEditDialog.defaultValue || "（无）" }}</code>
               </el-form-item>
               <el-form-item label="新值">
+                <!-- bool 类型：开关 -->
+                <el-switch
+                  v-if="businessEditDialog.valueType === 'bool'"
+                  v-model="businessEditDialog.value"
+                  active-value="true"
+                  inactive-value="false"
+                  inline-prompt
+                />
+                <!-- enum 类型：下拉选择 -->
+                <el-select
+                  v-else-if="businessEditDialog.valueType === 'enum'"
+                  v-model="businessEditDialog.value"
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="opt in businessEditDialog.enumOptions"
+                    :key="opt"
+                    :label="opt"
+                    :value="opt"
+                  />
+                </el-select>
+                <!-- number 类型：数字输入 -->
+                <el-input-number
+                  v-else-if="businessEditDialog.valueType === 'number'"
+                  v-model="businessEditDialog.value"
+                  :min="0"
+                  :step="1"
+                  style="width: 100%"
+                />
+                <!-- text 类型（默认）：多行文本 -->
                 <el-input
+                  v-else
                   v-model="businessEditDialog.value"
                   type="textarea"
                   :rows="3"

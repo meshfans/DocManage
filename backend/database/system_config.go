@@ -156,6 +156,11 @@ func ListAllConfigMeta() ([]ConfigMeta, error) {
 	out := make([]ConfigMeta, 0, len(keys))
 	for _, k := range keys {
 		def := defaults[k]
+		// 兜底 value_type：未设置时默认为 "text"
+		valueType := def.ValueType
+		if valueType == "" {
+			valueType = "text"
+		}
 		row := ConfigMeta{
 			Key:          k,
 			Value:        def.Value,
@@ -163,6 +168,8 @@ func ListAllConfigMeta() ([]ConfigMeta, error) {
 			Description:  def.Description,
 			Category:     def.Category,
 			IsOverridden: false,
+			ValueType:    valueType,
+			EnumOptions:  def.EnumOptions,
 		}
 		if o, ok := overrideMap[k]; ok && o.ConfigValue != "" {
 			row.Value = o.ConfigValue
@@ -174,14 +181,16 @@ func ListAllConfigMeta() ([]ConfigMeta, error) {
 	return out, nil
 }
 
-// ConfigMeta 是单条配置项的元信息结构（key / value / 默认值 / 描述 / 分类 / 是否被覆盖）。
+// ConfigMeta 是单条配置项的元信息结构（key / value / 默认值 / 描述 / 分类 / 是否被覆盖 / 值类型）。
 type ConfigMeta struct {
-	Key          string `json:"key"`
-	Value        string `json:"value"`
-	DefaultVal   string `json:"default_value"`
-	Description  string `json:"description"`
-	Category     string `json:"category"`
-	IsOverridden bool   `json:"is_overridden"`
+	Key          string   `json:"key"`
+	Value        string   `json:"value"`
+	DefaultVal   string   `json:"default_value"`
+	Description  string   `json:"description"`
+	Category     string   `json:"category"`
+	IsOverridden bool     `json:"is_overridden"`
+	ValueType    string   `json:"value_type"`     // 值类型：text | bool | enum | number
+	EnumOptions  []string `json:"enum_options"`  // 枚举选项（仅 value_type=enum 时非空）
 }
 
 // GetAllSystemConfig 列出 DB 中全部（key-value map），不含 DEFAULT_CONFIGS。
