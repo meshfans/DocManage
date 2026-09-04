@@ -7,6 +7,7 @@ import {
   type Message
 } from "@/api/message";
 import { wsService, type WebSocketMessage } from "@/utils/websocket";
+import { getToken } from "@/utils/auth";
 
 /**
  * 顶部铃铛 / 消息提醒的统一 composable（2026-09-04 重构）。
@@ -133,6 +134,14 @@ export function useMessageNotice() {
       unsubscribe = () => {
         // 旧版没有反注册接口，靠组件卸载时整个 wsService.disconnect 由上层处理
       };
+    }
+
+    // 触发 WS 连接（如果 wsService 已处于 leader / 已连接会 no-op）。
+    // 不在 wsService 内部自动 connect 是有意的：连接时机由"消息 composable"
+    // 这种"谁订阅谁连"的契约来控制；切走路由 / 用户登出后 disconnect 由上层处理。
+    const tokenInfo = getToken() as { accessToken?: string } | null;
+    if (tokenInfo?.accessToken) {
+      wsService.connect(tokenInfo.accessToken);
     }
 
     // 首屏拉一次：消息列表 + 未读数
