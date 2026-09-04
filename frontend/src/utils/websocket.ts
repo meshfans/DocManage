@@ -38,6 +38,64 @@ class WebSocketService {
   public onAuthError: (error: string) => void = () => {};
   public isConnected = ref(false);
 
+  /**
+   * 多订阅者模型（2026-09-04 重构）：
+   * - 旧 onMessage 是单值回调，新订阅者会覆盖旧订阅者（潜在 bug）。
+   * - 新 onSubscribe(type, handler) 注册订阅，返回 unsubscribe 函数。
+   * - onMessage 保留为 fallback（兼容尚未迁移的调用方），仍然触发一次 + 通知所有订阅者。
+   */
+  private subscribers: Map<string | "*", Set<(data: WebSocketMessage) => void>> = new Map();
+
+  onSubscribe(
+    type: string | "*",
+    handler: (data: WebSocketMessage) => void
+  ): () => void {
+    let bucket = this.subscribers.get(type);
+    if (!bucket) {
+      bucket = new Set();
+      this.subscribers.set(type, bucket);
+    }
+    bucket.add(handler);
+    return () => {
+      const b = this.subscribers.get(type);
+      if (b) {
+        b.delete(handler);
+        if (b.size === 0) this.subscribers.delete(type);
+      }
+    };
+  }
+
+  private dispatchMessage(data: WebSocketMessage) {
+    // 1) 默认回调（兼容旧版）：保留调用链
+    try {
+      this.onMessage(data);
+    } catch (e) {
+      console.error("[WS] legacy onMessage handler threw:", e);
+    }
+    // 2) 精确 type 订阅
+    const exact = this.subscribers.get(data.type);
+    if (exact) {
+      exact.forEach(fn => {
+        try {
+          fn(data);
+        } catch (e) {
+          console.error(`[WS] subscriber for ${data.type} threw:`, e);
+        }
+      });
+    }
+    // 3) 通配订阅
+    const wildcard = this.subscribers.get("*");
+    if (wildcard) {
+      wildcard.forEach(fn => {
+        try {
+          fn(data);
+        } catch (e) {
+          console.error("[WS] wildcard subscriber threw:", e);
+        }
+      });
+    }
+  }
+
   private readonly HEARTBEAT_INTERVAL = 30000;
   private readonly PING_TIMEOUT = 10000;
   private initDelay: number = 0;
@@ -116,7 +174,7 @@ class WebSocketService {
           // 收到转发的消息
           if (msg.instanceId !== this.instanceId) {
             console.log("[WS] Received forwarded message:", msg.message.type);
-            this.onMessage(msg.message);
+            this.dispatchMessage(msg.message);
           }
           return;
         }
