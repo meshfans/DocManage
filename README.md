@@ -129,6 +129,58 @@
 | **Docker 镜像** | 有运维团队的企业 | ⭐⭐ `docker-compose up` |
 | **源码 + 二进制混合** | 集成商、ISV、二次开发 | ⭐⭐⭐ Git clone + `package.ps1` |
 
+---
+
+## 3.4 近期更新（2026-07-22 ~ 2026-08-22）
+
+### 新功能（15 项）
+
+| # | 功能 | 描述 |
+|---|------|------|
+| 1 | **WebSocket 实时推送** | 消息通知、合同状态变更实时推送 |
+| 2 | **事件总线** | 服务间事件解耦 |
+| 3 | **优雅关停** | SIGTERM/SIGINT 优雅退出 |
+| 4 | **错误码字典** | 统一错误响应格式 |
+| 5 | **审计日志 UI** | 前端审计日志查询界面 |
+| 6 | **Docker 可观测性** | Prometheus + 告警规则部署 |
+| 7 | **WORM 存储** | append-only + 路径锁 + DB 哈希记录 |
+| 8 | **ADR 架构决策记录** | 5 篇架构决策文档 |
+| 9 | **业务事件埋点** | 关键操作事件追踪 |
+| 10 | **基础设施指标** | DB/WS/Scheduler Prometheus 指标 |
+| 11 | **体验模式** | 免登录快速预览 |
+| 12 | **登录自愈** | 失败后自动重试机制 |
+| 13 | **User 扩展字段** | FailedLoginCount / LockedUntil |
+| 14 | **审计哈希链** | SM3 append-only 审计链 |
+| 15 | **4 条业务告警规则** | 合同到期/WORM失败等 |
+
+### 安全修复（11 项）
+
+| # | 修复 | 优先级 |
+|---|------|--------|
+| 1 | **JWT 算法白名单** | Critical |
+| 2 | **JWT_SECRET env 强制** | High |
+| 3 | **JWT issuer 校验** | High |
+| 4 | **Secret 长度检查** | High |
+| 5 | **Clock skew 容错** | High |
+| 6 | **Refresh token rotation** | High |
+| 7 | **登录锁定机制** | High |
+| 8 | **JTI 防重放** | High |
+| 9 | **Base64 上限限制** | High |
+| 10 | **Refresh token snake_case** | High |
+| 11 | **Admin DB-backed 校验** | High |
+
+### RBAC 加固（8 项）
+
+| # | 模块 | 修复 |
+|---|------|------|
+| 1 | SetConfig | admin gate |
+| 2 | UploadSignature | 权限码校验 |
+| 3 | GetUser | owner-only 限制 |
+| 4 | CheckUsername | admin-only 限制 |
+| 5 | reminder | 模块权限加固 |
+| 6 | dept | 数据范围加固 |
+| 7 | media | 数据范围加固 |
+| 8 | GetSignature | owner 校验 |
 
 ---
 

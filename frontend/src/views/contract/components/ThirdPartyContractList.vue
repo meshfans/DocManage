@@ -22,6 +22,11 @@ defineOptions({
   name: "ThirdPartyContractList"
 });
 
+// 暴露 loadList 方法供父组件调用刷新
+defineExpose({
+  loadList
+});
+
 const props = defineProps<{
   // 客户视图下传入：仅显示该客户下的文档
   customerId?: number;

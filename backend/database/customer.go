@@ -397,29 +397,23 @@ func GetCustomersWithPaginationAndSearch(page, pageSize int, keyword string) ([]
 	return customers, total, rows.Err()
 }
 
-// CanDeleteCustomer 检查客户是否可以软删（客户下存在进行中的流转则不可软删）。
-//   - 进行中的流转：flow_instance.status = 'active' 且 deleted_at = 0
+// CanDeleteCustomer 检查客户是否可以软删（客户下存在进行中的合同则不可软删）。
+//   - 进行中的合同：third_party_contract.status NOT IN ('cancelled', 'archived')
 //
-// 2026-06-27：Bug #4 修复。
-//
-// Bug B 修复（2026-06-27）：之前 `if err == nil` 静默吞掉 DB 错误。
-//
-//	DB 出错时返回 (true, "") 等于"无在途流转"→ 允许删除实际有在途的客户。
-//	现在改为返回 (false, errMsg) 触发 DeleteCustomer 拒绝删除 + 上抛 500。
+// 底座版系统没有 flow_instance 流转表，改用 third_party_contract 检查。
 func CanDeleteCustomer(id int64) (bool, string) {
-	// 进行中的流转实例
-	var activeFlowCount int
+	// 进行中的合同
+	var activeContractCount int
 	err := DB.QueryRow(`
-		SELECT COUNT(*) FROM flow_instance
-		WHERE contract_id IN (SELECT id FROM contract WHERE customer_id = ? AND deleted_at = 0)
-		  AND deleted_at = 0
-		  AND status = 'active'
-	`, id).Scan(&activeFlowCount)
+		SELECT COUNT(*) FROM third_party_contract
+		WHERE customer_id = ?
+		  AND status NOT IN ('cancelled', 'archived')
+	`, id).Scan(&activeContractCount)
 	if err != nil {
-		return false, fmt.Sprintf("检查在途流转失败（拒绝删除以策安全）: %v", err)
+		return false, fmt.Sprintf("检查在途合同失败（拒绝删除以策安全）: %v", err)
 	}
-	if activeFlowCount > 0 {
-		return false, fmt.Sprintf("客户下存在 %d 个进行中的流转实例，请先处理后再删除", activeFlowCount)
+	if activeContractCount > 0 {
+		return false, fmt.Sprintf("客户下存在 %d 个进行中的合同，请先处理后再删除", activeContractCount)
 	}
 	return true, ""
 }

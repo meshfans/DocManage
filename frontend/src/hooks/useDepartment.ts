@@ -63,8 +63,14 @@ export function useDepartmentTree() {
     loading.value = true;
     try {
       const res = await getDepartmentTree(fields);
-      // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
-      const tree = Array.isArray(res.list) ? res.list : [];
+      // 后端 utils.Success 返回 { success, data } 包装；
+      // axios 拦截器返回 response.data（整个包络），所以 res = { success, data: [...] }。
+      // 兼容直接是数组的情况（兜底）。
+      const tree = Array.isArray(res)
+        ? res
+        : Array.isArray((res as any)?.data)
+        ? (res as any).data
+        : [];
       departmentTree.value = tree;
       if (!fields) {
         cachedTree = tree;

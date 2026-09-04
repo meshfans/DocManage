@@ -526,9 +526,9 @@ func IsAdminUser(c *gin.Context) bool {
 		return false
 	}
 
-	// admin 角色命中条件：持有通配符权限 *:* 或 roles 含 "admin"
+	// admin 角色命中条件：持有通配符权限 *:*:* 或 roles 含 "admin"
 	for _, p := range perms {
-		if p == "*:*" || p == "admin" {
+		if p == "*:*:*" || p == "admin" {
 			return true
 		}
 	}

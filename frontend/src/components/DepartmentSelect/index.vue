@@ -108,9 +108,11 @@ const loadDepartmentTree = async () => {
   loading.value = true;
   try {
     const res = await getDepartmentTree("id,name,parent_id,level");
-    // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
-    if (Array.isArray(res.list)) {
-      treeData.value = res.list as DepartmentTree[];
+    // 兼容 res 是数组 或 res.data 是数组（utils.Success 包装）
+    if (Array.isArray(res)) {
+      treeData.value = res as DepartmentTree[];
+    } else if (Array.isArray((res as any)?.data)) {
+      treeData.value = (res as any).data as DepartmentTree[];
     }
   } catch (error) {
     console.error("加载部门树失败:", error);

@@ -667,10 +667,15 @@ async function ensureDeptTreeLoaded() {
   if (deptTree.value.length > 0) return;
   try {
     const res = await getDepartmentTree();
-    // 后端返回 { list: DepartmentTree[], total }；axios 拦截器已 unwrap。
-    // res.list 在错误路径上可能为 undefined（如 401 时 403 envelope 没 list 字段），
-    // 用 Array.isArray 兜底，避免把 undefined 灌进 ref 导致 el-tree 渲染崩溃。
-    deptTree.value = Array.isArray(res.list) ? res.list : [];
+    // 兼容 res 是数组 或 res.data 是数组（utils.Success 包装）
+    // 用 Array.isArray 兜底，避免把非数组灌进 ref 导致 el-tree 渲染崩溃。
+    if (Array.isArray(res)) {
+      deptTree.value = res;
+    } else if (Array.isArray((res as any)?.data)) {
+      deptTree.value = (res as any).data;
+    } else {
+      deptTree.value = [];
+    }
   } catch (e: any) {
     // 错误格式兼容：
     //   1) axios 错误对象：e.response.data.message 是后端 envelope.message

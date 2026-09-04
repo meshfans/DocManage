@@ -17,9 +17,10 @@ export type DepartmentTree = Department & {
   children: DepartmentTree[];
 };
 
-/** GET /api/departments 返回：{ list: DepartmentTree[], total: number } */
+/** GET /api/departments 返回：{ success, data: DepartmentTree[] } 包络 */
 export type DepartmentListResult = {
   success?: boolean;
+  data?: DepartmentTree[];
   list?: DepartmentTree[];
   total?: number;
 };

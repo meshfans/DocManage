@@ -36,6 +36,7 @@ const customer = ref<Customer | null>(null);
 // ============ 关联文档列表 tab（纯本地状态） ============
 type TabKey = "third";
 const activeTab = ref<TabKey>("third");
+const thirdPartyContractListRef = ref<any>(null);
 
 const addButtonLabel = computed(() => "添加文档");
 const showAddButton = computed(() => true);
@@ -204,8 +205,8 @@ async function handleThirdCreateSubmit() {
       ElMessage.success("已创建并上传 PDF");
     }
     thirdCreateModalOpen.value = false;
-    // 通知第三方列表刷新（用 key 强制重挂载 + emit edit 走 router 不可靠）
-    // 直接刷新页面最稳，但 v5.2 改用 emit-based
+    // 刷新关联文档列表
+    thirdPartyContractListRef.value?.loadList();
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.message || err?.message || err || "请求失败");
   } finally {
@@ -321,7 +322,7 @@ onMounted(() => {
 
       <el-tabs v-model="activeTab" class="docs-tabs">
         <el-tab-pane label="关联文档" name="third">
-          <ThirdPartyContractList :customer-id="customerId" />
+          <ThirdPartyContractList ref="thirdPartyContractListRef" :customer-id="customerId" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
