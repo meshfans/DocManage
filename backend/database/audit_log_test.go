@@ -89,10 +89,10 @@ func TestAuditAppendAndChain(t *testing.T) {
 		actorID    int64
 		detail     string
 	}{
-		{AuditTargetMedia, 1, "view", 100, `{"seq":1}`},
+		{AuditTargetCustomer, 1, "create", 100, `{"seq":1}`},
 		{AuditTargetSignature, 2, "sign", 101, `{"seq":2}`},
-		{AuditTargetSeal, 3, "create", 102, `{"seq":3}`},
-		{AuditTargetCustomer, 1, "create", 100, `{"seq":4}`},
+		{AuditTargetReminder, 3, "create", 102, `{"seq":3}`},
+		{AuditTargetCustomer, 2, "update", 100, `{"seq":4}`},
 		{AuditTargetRBACRole, 5, "upsert", 102, `{"seq":5}`},
 	}
 	for i, tc := range tests {
@@ -135,7 +135,7 @@ func TestAuditAppendAndChain(t *testing.T) {
 func TestAuditTriggerBlocksUpdate(t *testing.T) {
 	defer auditTestDB(t)()
 
-	if _, err := AppendAudit(AuditTargetMedia, 1, "view", 100, "", "", "{}"); err != nil {
+	if _, err := AppendAudit(AuditTargetCustomer, 1, "view", 100, "", "", "{}"); err != nil {
 		t.Fatalf("AppendAudit 失败: %v", err)
 	}
 	_, err := DB.Exec(`UPDATE audit_log SET action = 'tampered' WHERE id = 1`)
@@ -151,7 +151,7 @@ func TestAuditTriggerBlocksUpdate(t *testing.T) {
 func TestAuditTriggerBlocksDelete(t *testing.T) {
 	defer auditTestDB(t)()
 
-	if _, err := AppendAudit(AuditTargetMedia, 1, "view", 100, "", "", "{}"); err != nil {
+	if _, err := AppendAudit(AuditTargetCustomer, 1, "view", 100, "", "", "{}"); err != nil {
 		t.Fatalf("AppendAudit 失败: %v", err)
 	}
 	_, err := DB.Exec(`DELETE FROM audit_log WHERE id = 1`)
@@ -167,10 +167,10 @@ func TestAuditTriggerBlocksDelete(t *testing.T) {
 func TestAuditChainDetectsTampering(t *testing.T) {
 	defer auditTestDB(t)()
 
-	if _, err := AppendAudit(AuditTargetMedia, 1, "view", 100, "", "", `{"a":1}`); err != nil {
+	if _, err := AppendAudit(AuditTargetCustomer, 1, "view", 100, "", "", `{"a":1}`); err != nil {
 		t.Fatalf("Append 1 失败: %v", err)
 	}
-	if _, err := AppendAudit(AuditTargetMedia, 1, "view", 100, "", "", `{"a":2}`); err != nil {
+	if _, err := AppendAudit(AuditTargetCustomer, 1, "view", 100, "", "", `{"a":2}`); err != nil {
 		t.Fatalf("Append 2 失败: %v", err)
 	}
 	brokenAt, err := VerifyAuditChain()
@@ -212,31 +212,31 @@ func TestAuditChainDetectsTampering(t *testing.T) {
 func TestAuditListByTarget(t *testing.T) {
 	defer auditTestDB(t)()
 
-	_, _ = AppendAudit(AuditTargetMedia, 1, "view", 100, "", "", "{}")
-	_, _ = AppendAudit(AuditTargetMedia, 1, "view", 100, "", "", "{}")
+	_, _ = AppendAudit(AuditTargetCustomer, 1, "view", 100, "", "", "{}")
+	_, _ = AppendAudit(AuditTargetCustomer, 1, "view", 100, "", "", "{}")
 	_, _ = AppendAudit(AuditTargetSignature, 5, "sign", 101, "", "", "{}")
 	_, _ = AppendAudit(AuditTargetCustomer, 7, "create", 102, "", "", "{}")
 
-	list, total, err := ListAudit(AuditTargetMedia, 1, 0, "", 0, 0, 1, 20)
+	list, total, err := ListAudit(AuditTargetCustomer, 1, 0, "", 0, 0, 1, 20)
 	if err != nil {
 		t.Fatalf("ListAudit 失败: %v", err)
 	}
 	if total != 2 {
-		t.Errorf("期望 2 条 media/target=1, 实际=%d", total)
+		t.Errorf("期望 2 条 customer/target=1, 实际=%d", total)
 	}
 	for _, r := range list {
-		if r.TargetType != AuditTargetMedia || r.TargetID != 1 {
-			t.Errorf("过滤错误: 期望 media/1, 实际=%s/%d", r.TargetType, r.TargetID)
+		if r.TargetType != AuditTargetCustomer || r.TargetID != 1 {
+			t.Errorf("过滤错误: 期望 customer/1, 实际=%s/%d", r.TargetType, r.TargetID)
 		}
 	}
 
-	// 按 customer
-	_, total, err = ListAudit(AuditTargetCustomer, 0, 0, "", 0, 0, 1, 20)
+	// 按 customer（不同 id）
+	_, total, err = ListAudit(AuditTargetCustomer, 7, 0, "", 0, 0, 1, 20)
 	if err != nil {
 		t.Fatalf("ListAudit 失败: %v", err)
 	}
 	if total != 1 {
-		t.Errorf("期望 1 条 customer, 实际=%d", total)
+		t.Errorf("期望 1 条 customer/target=7, 实际=%d", total)
 	}
 }
 
@@ -249,20 +249,16 @@ func TestAuditAppendRejectsInvalid(t *testing.T) {
 		t.Error("空 target_type 应报错")
 	}
 	// target_id == 0
-	if _, err := AppendAudit(AuditTargetMedia, 0, "view", 100, "", "", "{}"); err == nil {
+	if _, err := AppendAudit(AuditTargetCustomer, 0, "view", 100, "", "", "{}"); err == nil {
 		t.Error("target_id=0 应报错")
 	}
-	// target_id < 0 且非 consent_letter
-	if _, err := AppendAudit(AuditTargetMedia, -1, "view", 100, "", "", "{}"); err == nil {
-		t.Error("非 consent_letter 用 target_id<0 应报错")
+	// target_id < 0 一律拒绝（2026-09-04：consent_letter 下线后无例外）
+	if _, err := AppendAudit(AuditTargetCustomer, -1, "view", 100, "", "", "{}"); err == nil {
+		t.Error("target_id<0 应报错（无任何类型例外）")
 	}
 	// 空 action
-	if _, err := AppendAudit(AuditTargetMedia, 1, "", 100, "", "", "{}"); err == nil {
+	if _, err := AppendAudit(AuditTargetCustomer, 1, "", 100, "", "", "{}"); err == nil {
 		t.Error("空 action 应报错")
-	}
-	// consent_letter 允许 -1
-	if _, err := AppendAudit(AuditTargetConsentLetter, -1, "view", 100, "", "", "{}"); err != nil {
-		t.Errorf("consent_letter + target_id=-1 应允许, 实际=%v", err)
 	}
 }
 
@@ -271,7 +267,7 @@ func TestAuditListPageSize(t *testing.T) {
 	defer auditTestDB(t)()
 
 	for i := int64(1); i <= 5; i++ {
-		if _, err := AppendAudit(AuditTargetMedia, i, "view", 100, "", "", "{}"); err != nil {
+		if _, err := AppendAudit(AuditTargetCustomer, i, "view", 100, "", "", "{}"); err != nil {
 			t.Fatalf("Append %d 失败: %v", i, err)
 		}
 	}

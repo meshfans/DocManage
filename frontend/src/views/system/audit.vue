@@ -3,7 +3,7 @@
  * 审计日志查询 UI（admin only）
  *
  * 参考 D:\Code\APP\DocManage\front\src\views\system\audit.vue 完善：
- *   - AUDIT_DICT 集中字典：17 种 target_type × 分级 tag 色 × 各类型 action 全集
+ *   - AUDIT_DICT 集中字典：12 种 target_type × 分级 tag 色 × 各类型 action 全集
  *   - 统计卡（按类型实时统计本页数量）
  *   - 链状态徽章 + 验证结果 Alert 横幅
  *   - 级联筛选：target_type → action 下拉联动，切类型自动清空不适用 action
@@ -477,7 +477,7 @@ onMounted(fetchList);
         </div>
       </template>
 
-      <!-- 统计卡（17 种类型 + 本页总数 + 累计总数 = 19 张；紧凑布局） -->
+      <!-- 统计卡（12 种类型 + 本页总数 + 累计总数 = 14 张；紧凑布局） -->
       <div class="stats-row">
         <el-card class="stat-card" shadow="never">
           <div class="stat-label">本页审计</div>
@@ -737,7 +737,7 @@ onMounted(fetchList);
   gap: 8px;
 }
 
-/* 统计卡：19 张（本页 + 17 类型 + 累计）紧凑布局
+/* 统计卡：14 张（本页 + 12 类型 + 累计）紧凑布局
  * - minmax 108px（缩窄宽度），gap 8px
  * - el-card__body padding 10px 8px（缩内边距）
  * - stat-value 18px，label 11px

@@ -648,9 +648,13 @@ func createTables() error {
 
 	-- 通用审计表（append-only，司法 L4 合规 / SM3 全局哈希链）
 	-- target_type 字典（按需扩展，权威源在 handlers/audit.go）：
-	--   media / signature / seal / contract / flow / thirdparty / reminder /
-	--   rbac_role / rbac_permission / rbac_user_binding / consent_letter /
+	--   signature / thirdparty / reminder /
+	--   rbac_role / rbac_permission / rbac_user_binding /
 	--   pdf_lock / customer / system / auth / backup / scheduled_task
+	-- media / consent_letter / seal / contract / flow 类型于 2026-09-04 全部下线：
+	--   - media 表存在但审计走 media.audit JSON 字段
+	--   - consent_letter 业务未上线，移除其 target_id<0 特例分支
+	--   - seal (印章) / contract (合同表单) / flow (流转) 早期保留位；业务统一在 thirdparty
 	-- action 字典按 target_type 分组，与 DocManage 一致；详见 handlers/audit.go 注释。
 	CREATE TABLE IF NOT EXISTS audit_log (
 		id           INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -9,7 +9,7 @@
  *   - 仅 admin 可访问（后端 RequireAdmin 兜底，前端通过路由 meta 守卫）
  *   - 列表返回 envelope.data = { list, total, page, page_size }
  *   - 导出 CSV 由前端按 list 字段直接生成（无需后端再开一个端点）
- *   - AUDIT_DICT 集中维护 17 种 target_type 的中文名 / Tag 颜色 / action 全集，
+ *   - AUDIT_DICT 集中维护 12 种 target_type 的中文名 / Tag 颜色 / action 全集，
  *     供 audit.vue 筛选下拉 / 表格 Tag / 统计卡 三处复用，避免分散导致对不上。
  */
 import { http } from "@/utils/http";
@@ -60,9 +60,19 @@ export interface ReconcileResult {
 // ==================== 权威字典 AUDIT_DICT ====================
 //
 // 权威来源：backend/models/audit.go 顶部注释 + database/audit_log.go AuditTargetXxx 常量。
-// 共 17 种 target_type：media / signature / seal / contract / flow / thirdparty /
-// reminder / rbac_role / rbac_permission / rbac_user_binding / consent_letter /
+// 共 12 种 target_type：signature / thirdparty /
+// reminder / rbac_role / rbac_permission / rbac_user_binding /
 // pdf_lock / customer / auth / backup / scheduled_task / system。
+//
+// 2026-09-04 一次性下线 5 个僵尸类型（无对应业务实体 / 无 handler）：
+//   - media            业务实体存在，但 audit 不再写 audit_log；
+//                      媒体操作审计由 media.audit JSON 环形字段承载（参 handlers/media.go）。
+//   - consent_letter   业务完全未上线，无表无 handler；移除 target_id<0 特例。
+//   - seal             印章模块全栈下线（handlers/seal.go 已删）。
+//   - contract         合同表单保存（统一为 thirdparty；保留 third_party_contract 表）。
+//   - flow             流程审批模块整体未上线。
+//
+// 前端菜单/下拉/统计卡同步收敛。
 //
 // 每种类型包含：label（中文名）、tag（el-tag 类型色）、actions（该类型下所有 action 枚举）。
 //
@@ -88,23 +98,6 @@ export interface AuditTypeDef {
 }
 
 export const AUDIT_DICT: Record<string, AuditTypeDef> = {
-  media: {
-    label: "媒体",
-    tag: "primary",
-    actions: [
-      { value: "view", label: "查看 (view)" },
-      { value: "download", label: "下载 (download)" },
-      { value: "upload", label: "上传 (upload)" },
-      { value: "record", label: "摄像记录 (record)" },
-      { value: "delete", label: "删除 (delete)" },
-      { value: "restore", label: "恢复 (restore)" },
-      { value: "bind", label: "绑定 (bind)" },
-      { value: "unbind", label: "解绑 (unbind)" },
-      { value: "tag-add", label: "加标签 (tag-add)" },
-      { value: "tag-remove", label: "去标签 (tag-remove)" },
-      { value: "bulk-delete", label: "批量删除 (bulk-delete)" }
-    ]
-  },
   signature: {
     label: "签名",
     tag: "success",
@@ -113,34 +106,6 @@ export const AUDIT_DICT: Record<string, AuditTypeDef> = {
       { value: "sign-date", label: "日期-合同 (sign-date)" },
       { value: "sign-draft", label: "手签-草稿 (sign-draft)" },
       { value: "sign-date-draft", label: "日期-草稿 (sign-date-draft)" }
-    ]
-  },
-  seal: {
-    label: "印章",
-    tag: "warning",
-    actions: [
-      { value: "create", label: "创建 (create)" },
-      { value: "delete", label: "删除 (delete)" },
-      { value: "restore", label: "恢复 (restore)" }
-    ]
-  },
-  contract: {
-    label: "合同",
-    tag: "info",
-    actions: [
-      { value: "save-form", label: "保存表单 (save-form)" },
-      { value: "status-change", label: "状态变更 (status-change)" }
-    ]
-  },
-  flow: {
-    label: "流转",
-    tag: "primary",
-    actions: [
-      { value: "start", label: "启动 (start)" },
-      { value: "submit-step", label: "提交步骤 (submit-step)" },
-      { value: "reject", label: "驳回 (reject)" },
-      { value: "cancel", label: "取消 (cancel)" },
-      { value: "delete", label: "删除 (delete)" }
     ]
   },
   thirdparty: {
@@ -188,11 +153,6 @@ export const AUDIT_DICT: Record<string, AuditTypeDef> = {
       { value: "assign_roles", label: "分配角色 (assign_roles)" },
       { value: "update_roles", label: "更新角色 (update_roles)" }
     ]
-  },
-  consent_letter: {
-    label: "意愿确认书",
-    tag: "info",
-    actions: [{ value: "view", label: "阅读 (view)" }]
   },
   pdf_lock: {
     label: "PDF 锁定 (WORM)",

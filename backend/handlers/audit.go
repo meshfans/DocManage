@@ -31,7 +31,7 @@ func NewAuditHandler() *AuditHandler {
 // ListAudit GET /api/audit?target_type=&target_id=&actor_id=&action=&from=&to=&page=&page_size=
 //
 // Query 参数：
-//   - target_type: "" / "media" / "signature" / "seal" / "customer" / ...
+//   - target_type: "" / "signature" / "thirdparty" / "customer" / ...（权威字典见 models/audit.go）
 //   - target_id:   0  = 全部（仅当 target_type 不为空时按 target_id 过滤）
 //   - actor_id:    0  = 全部
 //   - action:      "" = 全部

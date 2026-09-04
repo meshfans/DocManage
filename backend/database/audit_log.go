@@ -17,8 +17,10 @@ import (
 // ==================== 通用审计 append-only 表（SM3 哈希链）====================
 //
 // 设计目标：
-//   1. 通用：支持多种 target 对象（media / signature / seal / contract / flow /
-//      thirdparty / customer / rbac_* / auth / backup / scheduled_task ...）
+//   1. 通用：支持多种 target 对象（signature / thirdparty / customer /
+//      rbac_* / auth / backup / scheduled_task ...）
+//      历史下线：media / consent_letter / seal / contract / flow
+//      （2026-09-04 统一处理，参 doc string 下方说明）。
 //   2. append-only：应用层零 UPDATE/DELETE（DB 触发器 trg_audit_log_no_update/no_delete 兜底）
 //   3. 哈希链：每行 hash_sm3 = SM3(prev_hash + target_type + target_id + action +
 //                                  actor_id + created_at + detail)
@@ -32,29 +34,23 @@ import (
 // HashChainGenesis 全局哈希链的"创世块"标识。第一行的 prev_hash 字段固定为该值。
 const HashChainGenesis = "GENESIS"
 
-// AuditTargetType 审计目标类型常量（与 models/audit.go 注释字典保持一致）。
+// AuditTargetType 审计目标类型常量（12 个活跃 + 5 个 2026-09-04 下线，见下方）。
+// 权威 target_type 字典见 models/audit.go 顶部注释。
 //
-// Phase 6 (Critical #8) 2026-08-20：AuditTargetSeal / AuditTargetFlow /
-// AuditTargetConsentLetter / AuditTargetContract 当前**无对应业务实体**
-// （grep 确认：database / handlers / models 中无 seal / flow_step /
-// consent_letter 表与 handler）。它们是早期 schema 设计预留，保留为
-// Deprecated 常量以便将来若新增对应业务模块时可立即启用，且不让 AppendAudit
-// 调用点报"未定义"。
+// 历史：以下类型已于 2026-09-04 全部下线（无对应业务实体 / 无 handler），
+//   - seal           印章（handlers/seal.go 已删除，2026-07-06 round 5/7）
+//   - contract       合同表单保存（统一为 thirdparty；保留 third_party_contract 表）
+//   - flow           流转步骤（流程审批模块整体未上线）
+//   - consent_letter 意愿确认书（业务完全未上线；并清掉 AppendAudit 的 targetID<0 特例）
+//
+// 当前字典见 models/audit.go 顶部注释。
 const (
-	AuditTargetMedia           = "media"
 	AuditTargetSignature       = "signature"
-	// Deprecated: 项目内无 seal 业务实体。保留以备后续扩展。
-	AuditTargetSeal            = "seal"
-	AuditTargetContract        = "contract"   // 合同表单保存（form_json 修改）
-	// Deprecated: 项目内无 flow_step 业务实体（流程审批模块未上线）。保留以备扩展。
-	AuditTargetFlow            = "flow"
 	AuditTargetThirdParty      = "thirdparty" // Trail 业务命名（无下划线，保持向后兼容）
 	AuditTargetReminder        = "reminder"
 	AuditTargetRBACRole        = "rbac_role"
 	AuditTargetRBACPermission  = "rbac_permission"
 	AuditTargetRBACUserBinding = "rbac_user_binding"
-	// Deprecated: consent_letter（同意书）合规事件保留位；当前未上线业务实体。
-	AuditTargetConsentLetter   = "consent_letter"
 	AuditTargetPDFLock         = "pdf_lock"
 	AuditTargetCustomer        = "customer"
 	AuditTargetAuth            = "auth"
@@ -73,7 +69,7 @@ var auditLogMu sync.Mutex
 // AppendAudit 写入一条审计记录（哈希链全局顺序）。
 //
 //   - targetType: 业务对象类型（见 AuditTargetType 常量）
-//   - targetID:   关联对象 id（int64；consent_letter 允许 -1 标记匿名）
+//   - targetID:   关联对象 id（int64；auth / system / backup 允许 0 表示无 target；负值一律拒绝）
 //   - action:     操作类型（按 targetType 区分字典）
 //   - actorID:    操作用户 id（0 表示系统/匿名）
 //   - actorIP:    客户端 IP（可空）
@@ -120,15 +116,16 @@ func AppendAudit(
 	if targetType == "" {
 		return 0, fmt.Errorf("target_type 不能为空")
 	}
-	// consent_letter 允许 target_id == -1（标记匿名+无客户的意愿书阅读）
 	// auth 允许 target_id == 0（登录失败时用户不存在，无 target）
 	// system / backup 也允许 target_id == 0（cron job 类无具体业务对象的系统级事件）
+	// 历史：consent_letter 曾允许 target_id == -1（匿名意愿书阅读），
+	//       2026-09-04 consent_letter 类型下线 → 一律拒绝负值。
 	if targetID == 0 && targetType != AuditTargetAuth &&
 		targetType != AuditTargetSystem && targetType != AuditTargetBackup {
 		return 0, fmt.Errorf("target_id 非法: %d", targetID)
 	}
-	if targetID < 0 && targetType != AuditTargetConsentLetter {
-		return 0, fmt.Errorf("target_id < 0 仅 consent_letter 允许")
+	if targetID < 0 {
+		return 0, fmt.Errorf("target_id < 0 不允许 (所有类型均为正整数 id)")
 	}
 	if action == "" {
 		return 0, fmt.Errorf("action 不能为空")

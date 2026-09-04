@@ -7,17 +7,12 @@ package models
 //
 // 权威 target_type 字典（与 database/audit_log.go AuditTargetType 常量一致）：
 //
-//	media              媒体
 //	signature          签名
-//	seal               印章
-//	contract           合同表单保存（form_json 修改）
-//	flow               流转步骤提交
 //	thirdparty         第三方合同（Trail 业务命名，使用无下划线风格）
 //	reminder           提醒业务
 //	rbac_role          RBAC 角色 CRUD
 //	rbac_permission    RBAC 权限 CRUD
 //	rbac_user_binding  RBAC 用户角色绑定
-//	consent_letter     意愿确认书阅读记录
 //	pdf_lock           合同 PDF 锁定（WORM）
 //	customer           客户 CRUD + 签名上传
 //	auth               认证（login/refresh/password.change）
@@ -25,14 +20,18 @@ package models
 //	scheduled_task     调度任务
 //	system             系统高风险操作（维护模式等）
 //
+// 注意：以下类型已于 2026-09-04 全部下线（无对应业务实体 / 无 handler）。
+//   - media            业务实体（media 表）保留，但审计写入走 media.audit JSON 环形字段
+//                      （参 handlers/media.go），不再走本 audit_log 表。
+//   - consent_letter   业务模块完全未上线（无对应表 / handler）；同时移除
+//                      AppendAudit 中"target_id<0 仅 consent_letter 允许"的特殊分支，
+//                      所有类型一律使用正整数 target_id。
+//   - seal / contract / flow  历史保留位，业务已下线（印章模块 + 流程审批模块
+//                      + 独立合同表单均未上线；合同业务统一在 thirdparty）。
+//
 // 权威 action 字典（按 target_type 分类）：
 //
-//	media             view / download / upload / record / delete / restore /
-//	                  bind / unbind / tag-add / tag-remove / bulk-delete
 //	signature         sign / sign-date / sign-draft / sign-date-draft
-//	seal              create / delete / restore
-//	contract          save-form / status-change
-//	flow              start / submit-step / reject / cancel / delete
 //	thirdparty        create / status-change / delete
 //	reminder          create / update / delete / subscribe /
 //	                  update-sub / unsubscribe / scan
