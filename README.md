@@ -120,6 +120,8 @@
 3. **WAL/DELETE 双模式 + 链式增量备份**：默认 `DELETE` journal（兼容性最好），可改 `WAL`（高并发 + 增量备份），链式保留 `keep_until` 索引 + 自动清理。
 4. **维护模式 P0**：恢复期间拦截所有业务 API，仅放行 `/health` + `/api/system/maintenance`，避免数据漂移。
 5. **限流 + JWT 黑名单 GC**：登录 / 改密 / 刷新 token 按 IP + 账号限流；JWT 黑名单后台 GC 清理已过期项避免内存累积。
+6. **新消息提示音**：Web Audio API 机器合成「叮咚」音效，业务配置开关控制。
+7. **业务配置按值类型渲染**：bool/enum/number/text 四种编辑组件，后端 `config_defaults.go` 一行注册。
 
 ## 3.3 交付形态
 
@@ -131,9 +133,18 @@
 
 ---
 
-## 3.4 近期更新（2026-07-22 ~ 2026-08-22）
+## 3.4 近期更新（2026-08-22 ~ 2026-09-04）
 
-### 新功能（15 项）
+### 新功能（4 项）
+
+| # | 功能 | 描述 |
+|---|------|------|
+| 1 | **新消息提示音** | Web Audio API 机器合成「叮咚」音效，业务配置 `notification_sound_enabled` 开关控制 |
+| 2 | **业务配置按值类型渲染** | 后端 `config_defaults.go` 新增 `ValueType` + `EnumOptions`，前端按 bool/enum/number/text 渲染 4 种编辑组件 |
+| 3 | **消息角标统一重构** | 抽 `useMessageNotice` composable，WS 多订阅 Set，删「任务」tab，角标唯一权威 |
+| 4 | **体验版 config.mode=test** | 显式声明 `mode:"test"`，便于切换 `experience` 演示模式 |
+
+### 遗留功能（2026-07-22 ~ 2026-08-22）
 
 | # | 功能 | 描述 |
 |---|------|------|
@@ -245,7 +256,7 @@ Vue 3 + TS + Element Plus + Vite 7；版本 [frontend/package.json](./frontend/p
 - **路由**：[frontend/src/router/modules/](./frontend/src/router/modules/)（9 个模块，22 个路由）
 - **API 定义**：[frontend/src/api/](./frontend/src/api/)（13 个 API 客户端）
 
-**页面（14 个 .vue）**：welcome/、login/、customer/（individual / enterprise / contracts）、contract/（ThirdPartyContractList / ThirdPartyContractDetail）、media-library/（MediaGrid / Filter / Uploader / Detail / Lightbox）、system/（user / department / config / backup / scheduledTask / reminder）、rbac/（role / permission）、error/（403 / 404 / 500）。
+**页面（14 个 .vue）**：welcome/、login/、customer/（individual / enterprise / contracts）、contract/（ThirdPartyContractList / ThirdPartyContractDetail）、media-library/（MediaGrid / Filter / Uploader / Detail / Lightbox）、system/（user / department / config / backup / scheduledTask / reminder / audit）、rbac/（role / permission）、error/（403 / 404 / 500）。
 
 ---
 
