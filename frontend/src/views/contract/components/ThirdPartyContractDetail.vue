@@ -44,10 +44,34 @@ const type = ref<"paper" | "electronic">("paper");
 const amount = ref(0);
 const currency = ref("CNY");
 const signDate = ref<string>("");       // 格式 "YYYY-MM-DD"，0 表示未填
-const startDate = ref<string>("");
-const endDate = ref<string>("");
+const effectiveDate = ref<string>("");    // 生效日期
+const expireDate = ref<string>("");       // 到期日期
 const remark = ref("");
 const status = ref("draft");
+
+// Aliases for template compatibility
+const startDate = effectiveDate;
+const endDate = expireDate;
+
+function fillForm(
+  titleVal: string,
+  typeVal: string,
+  amountVal: number,
+  currencyVal: string,
+  signDateVal: string,
+  effectiveDateVal: string,
+  expireDateVal: string,
+  remarkVal: string
+) {
+  title.value = titleVal;
+  type.value = typeVal as "paper" | "electronic";
+  amount.value = amountVal;
+  currency.value = currencyVal;
+  signDate.value = signDateVal;
+  effectiveDate.value = effectiveDateVal;
+  expireDate.value = expireDateVal;
+  remark.value = remarkVal;
+}
 
 // 终态守卫（archived / cancelled）：终态合同不可修改表单 / 不可重新上传 / 不可保存
 // 详情页可"查看"（下载 PDF / 跳回列表），但写操作被禁用
@@ -83,8 +107,8 @@ async function loadDetail() {
     amount.value = d.amount;
     currency.value = d.currency;
     signDate.value = d.sign_date ? formatTs(d.sign_date) : "";
-    startDate.value = d.start_date ? formatTs(d.start_date) : "";
-    endDate.value = d.end_date ? formatTs(d.end_date) : "";
+    effectiveDate.value = d.start_date ? formatTs(d.start_date) : "";
+    expireDate.value = d.end_date ? formatTs(d.end_date) : "";
     remark.value = d.remark;
     filePath.value = d.file_path;
     fileSize.value = d.file_size;
@@ -209,8 +233,8 @@ async function handleSubmit() {
         amount: amount.value,
         currency: currency.value,
         sign_date: tsFromDate(signDate.value),
-        start_date: tsFromDate(startDate.value),
-        end_date: tsFromDate(endDate.value),
+        start_date: tsFromDate(effectiveDate.value),
+        end_date: tsFromDate(expireDate.value),
         remark: remark.value
       });
       if (!res.success) {
@@ -227,8 +251,8 @@ async function handleSubmit() {
         amount.value,
         currency.value,
         signDate.value,
-        startDate.value,
-        endDate.value,
+        effectiveDate.value,
+        expireDate.value,
         remark.value
       );
       if (!res.success) {
@@ -261,8 +285,8 @@ async function createSkeleton(
   amountVal: number,
   currencyVal: string,
   signDateVal: string,
-  startDateVal: string,
-  endDateVal: string,
+  effectiveDateVal: string,
+  expireDateVal: string,
   remarkVal: string
 ) {
   const { createThirdPartyContract } = await import("@/api/third_party");
@@ -274,8 +298,8 @@ async function createSkeleton(
     amount: amountVal,
     currency: currencyVal,
     sign_date: tsFromDate(signDateVal),
-    start_date: tsFromDate(startDateVal),
-    end_date: tsFromDate(endDateVal),
+    start_date: tsFromDate(effectiveDateVal),
+    end_date: tsFromDate(expireDateVal),
     file_path: "pending://upload-on-submit",
     file_size: fileSize.value,
     file_sm3_hash: "",

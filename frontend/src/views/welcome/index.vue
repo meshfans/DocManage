@@ -20,7 +20,6 @@ import { ElMessage } from "element-plus";
 import {
   User,
   Document,
-  Warning,
   Bell,
   Clock,
   VideoCamera,
@@ -153,7 +152,7 @@ const MODULES: ModuleDef[] = [
         label: "文档总数",
         perms: ["contract:detail"],
         getValue: s => s.total_third_party_contracts,
-        path: "/contract/list",
+        path: "/library/document",
         highlight: true
       }
     ]
@@ -213,7 +212,7 @@ const MODULES: ModuleDef[] = [
         label: "媒体总数",
         perms: ["media:list"],
         getValue: s => s.total_media,
-        path: "/media/library",
+        path: "/library/media",
         highlight: true
       }
     ]
@@ -249,23 +248,15 @@ const MODULES: ModuleDef[] = [
  * 过滤出当前用户有权访问的模块
  * - 模块级权限用 OR（hasAnyPerms），任一命中即保留
  * - 卡片级权限用 AND（hasPerms），全部命中才显示
- * - 2026-06-27 v2.1：值为 0 的子卡片隐藏（避免空模块视觉噪音）
- *   例：客户总数 0 时，整个"客户管理"模块隐藏（无可点数据）
- *   例：用户只有 1 个文档时，仅显示"文档总数"+"草稿"，其它 0 值卡片隐藏
- *   注：仅在首次成功加载（lastUpdated > 0）后启用 0 值过滤，
- *     防止"请求中 → 全 0 → 整页空白"的视觉闪烁
+ * - 2026-09-17：移除 0 值隐藏，改为显示 0 值（始终显示所有卡片）
  */
 const visibleModules = computed(() => {
-  const hideZero = lastUpdated.value > 0;
-  // 单卡过滤：权限 + 0 值
+  // 单卡过滤：仅权限判断
   const filterCard = (c: ModuleCard) => {
     // 权限：未定义 / 空数组 → 放行；否则 AND 命中
     const passesPerm =
       !c.perms || c.perms.length === 0 || hasPerms(c.perms);
-    if (!passesPerm) return false;
-    // 0 值过滤（仅在首次加载完成后生效）
-    if (hideZero && c.getValue(stats.value) === 0) return false;
-    return true;
+    return passesPerm;
   };
   return MODULES.filter(m => {
     if (!hasAnyPerms(m.perms)) return false;
@@ -275,44 +266,6 @@ const visibleModules = computed(() => {
     ...m,
     cards: m.cards.filter(filterCard)
   }));
-});
-
-/**
- * 顶部 hero 卡片（最高优先级 / 全局摘要）
- * 仅当用户拥有对应业务的查看权限时显示
- * 2026-07-06 round2 精简：主合同相关 hero（total_contracts / signed_contracts /
- *   archived_contracts / draft_contracts）已下线；保留"文档总数" + "客户总数"
- */
-const heroCards = computed(() => {
-  const cards: Array<{
-    key: string;
-    label: string;
-    value: number;
-    path: string;
-    icon: any;
-    color: string;
-    perms: string[];
-  }> = [
-    {
-      key: "total_third_party_contracts",
-      label: "文档总数",
-      value: stats.value.total_third_party_contracts,
-      path: "/contract/list",
-      icon: Document,
-      color: "linear-gradient(135deg, #409EFF 0%, #66b1ff 100%)",
-      perms: ["contract:detail"]
-    },
-    {
-      key: "total_customers",
-      label: "客户总数",
-      value: stats.value.total_customers,
-      path: "/customer/individual",
-      icon: User,
-      color: "linear-gradient(135deg, #9c27b0 0%, #ba68c8 100%)",
-      perms: ["customer:list"]
-    }
-  ];
-  return cards.filter(c => hasPerms(c.perms));
 });
 
 // ==================== 快捷操作（RBAC 驱动）====================
@@ -348,7 +301,7 @@ const ALL_ACTIONS: QuickAction[] = [
     desc: "照片 / 录像 / 音频证据",
     icon: PictureFilled,
     color: "#9c27b0",
-    path: "/media/library",
+    path: "/library/media",
     perms: ["media:upload"]
   },
   {
@@ -391,13 +344,13 @@ async function loadStats() {
   }
 }
 
-function onRefresh() {
-  loadStats();
-}
-
 function goTo(path: string) {
   if (!path) return;
   router.push(path);
+}
+
+function onRefresh() {
+  loadStats();
 }
 
 function formatTime(ts: number | null | undefined) {
@@ -432,7 +385,7 @@ onMounted(async () => {
         <div class="hero-greeting">
           <h1>{{ greeting }}，{{ userStore.nickname || userStore.username || "用户" }} 👋</h1>
           <p class="hero-subtitle">
-            模小范文档管理系统工作台
+            DocManage 工作台
           </p>
         </div>
         <div class="hero-meta">
@@ -454,24 +407,6 @@ onMounted(async () => {
       <!-- 装饰：背景层叠渐变 + 浮动光圈 -->
       <div class="hero-deco hero-deco-1"></div>
       <div class="hero-deco hero-deco-2"></div>
-    </div>
-
-    <!-- ==================== Hero 统计（核心摘要）==================== -->
-    <div v-if="heroCards.length > 0" class="hero-stats">
-      <div
-        v-for="card in heroCards"
-        :key="card.key"
-        class="hero-stat"
-        @click="goTo(card.path)"
-      >
-        <div class="hero-stat-icon" :style="{ background: card.color }">
-          <el-icon :size="28"><component :is="card.icon" /></el-icon>
-        </div>
-        <div class="hero-stat-body">
-          <div class="hero-stat-value">{{ card.value }}</div>
-          <div class="hero-stat-label">{{ card.label }}</div>
-        </div>
-      </div>
     </div>
 
     <!-- ==================== 模块化统计卡片 ==================== -->
@@ -640,147 +575,6 @@ onMounted(async () => {
   padding: 20px;
   max-width: 1600px;
   margin: 0 auto;
-}
-
-/* ==================== Hero ==================== */
-.welcome-hero {
-  position: relative;
-  overflow: hidden;
-  padding: 36px 32px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  border-radius: 16px;
-  color: #fff;
-  margin-bottom: 24px;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
-}
-
-.hero-content {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.hero-greeting h1 {
-  margin: 0 0 8px 0;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.hero-subtitle {
-  margin: 0;
-  font-size: 14px;
-  opacity: 0.85;
-  letter-spacing: 0.3px;
-}
-
-.hero-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8px);
-  padding: 6px 14px 6px 12px;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.hero-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-/* 装饰光圈 */
-.hero-deco {
-  position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.25) 0%,
-    transparent 70%
-  );
-  pointer-events: none;
-  z-index: 1;
-}
-.hero-deco-1 {
-  width: 240px;
-  height: 240px;
-  top: -80px;
-  right: -60px;
-}
-.hero-deco-2 {
-  width: 160px;
-  height: 160px;
-  bottom: -50px;
-  left: 35%;
-}
-
-/* ==================== Hero 统计 ==================== */
-.hero-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 32px;
-}
-
-.hero-stat {
-  display: flex;
-  align-items: center;
-  padding: 20px 22px;
-  background: var(--el-bg-color);
-  border-radius: 14px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  border: 1px solid var(--el-border-color-lighter);
-}
-
-.hero-stat:hover {
-  transform: translateY(-4px);
-  /* 2026-06-27 v2.3 dark mode 适配：阴影从纯黑改为半透明黑色变量
-   *   - 浅色模式：rgba(0,0,0,0.12) 与原一致
-   *   - 深色模式：var(--el-box-shadow) / var(--el-box-shadow-light) 自动适配
-   *     由于纯黑阴影在深色背景上几乎不可见，此处叠加两层以兼容两种模式
-   */
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.12),
-    0 0 0 1px rgba(64, 158, 255, 0.08);
-  border-color: transparent;
-}
-
-.hero-stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  margin-right: 16px;
-  flex-shrink: 0;
-}
-
-.hero-stat-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.hero-stat-value {
-  font-size: 30px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  line-height: 1.1;
-}
-
-.hero-stat-label {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  margin-top: 4px;
 }
 
 /* ==================== Section 标题 ==================== */
@@ -1038,6 +832,85 @@ onMounted(async () => {
   margin-top: 2px;
 }
 
+/* ==================== Hero ==================== */
+.welcome-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 36px 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  border-radius: 16px;
+  color: #fff;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.hero-greeting h1 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  padding: 6px 14px 6px 12px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.hero-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.hero-subtitle {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.85;
+  letter-spacing: 0.3px;
+}
+
+/* 装饰光圈 */
+.hero-deco {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.25) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+.hero-deco-1 {
+  width: 240px;
+  height: 240px;
+  top: -80px;
+  right: -60px;
+}
+.hero-deco-2 {
+  width: 160px;
+  height: 160px;
+  bottom: -50px;
+  left: 35%;
+}
+
 /* ==================== 响应式 ==================== */
 @media (max-width: 768px) {
   .welcome-hero {
@@ -1049,12 +922,6 @@ onMounted(async () => {
   }
   .hero-greeting h1 {
     font-size: 22px;
-  }
-  .hero-stats {
-    grid-template-columns: 1fr 1fr;
-  }
-  .hero-stat-value {
-    font-size: 24px;
   }
 }
 </style>

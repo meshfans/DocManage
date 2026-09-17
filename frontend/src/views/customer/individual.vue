@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { ArrowDown } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -227,7 +228,7 @@ const goToContracts = (row: Customer) => {
 
 const goToMedia = (row: Customer) => {
   router.push({
-    path: "/media/library",
+    path: "/library/media",
     query: {
       customer_id: String(row.id),
       customer_name: row.real_name || ""
@@ -288,23 +289,32 @@ onMounted(() => {
             {{ formatTimestampLang(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" minWidth="260">
+        <el-table-column label="操作" fixed="right" minWidth="150">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goToMedia(row)">
-              媒体
-            </el-button>
-            <el-button link type="primary" @click="goToContracts(row)">
-              文档
-            </el-button>
-            <el-button link type="warning" @click="openReminderDialog(row)">
-              提醒
-            </el-button>
-            <el-button link type="primary" @click="openEditDialog(row)">
-              编辑
-            </el-button>
-            <el-button link type="danger" @click="handleDelete(row)">
-              删除
-            </el-button>
+            <span class="op-cell">
+              <el-button link type="primary" size="small" @click="goToMedia(row)">
+                媒体
+              </el-button>
+              <el-button link type="primary" size="small" @click="goToContracts(row)">
+                文档
+              </el-button>
+              <el-dropdown trigger="click" @command="(cmd: string) => {
+                if (cmd === 'reminder') openReminderDialog(row);
+                else if (cmd === 'edit') openEditDialog(row);
+                else if (cmd === 'delete') handleDelete(row);
+              }">
+                <el-button type="primary" link size="small" class="op-more">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="reminder">提醒</el-dropdown-item>
+                    <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                    <el-dropdown-item command="delete" divided style="color: var(--el-color-danger)">删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -406,5 +416,24 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+.op-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+}
+.op-cell .el-button {
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+.op-cell .op-more {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  margin-left: 12px !important;
+}
+.op-cell .op-more .el-icon {
+  margin-left: 0 !important;
 }
 </style>

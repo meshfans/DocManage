@@ -73,8 +73,11 @@ func generateContractNo() string {
 // 规则：
 //   - admin 或 data_scope=all：直接走 ListThirdPartyContracts（全量）
 //   - 否则：BuildWhereSQL + ListThirdPartyContractsByDataScope（按 created_by/department_id 过滤）
+//
+// 2026-09-17 P0-1 修复：调用方需先调 EnsureListDataScope guard，本函数不再处理 scope=nil。
 func listThirdPartyContractsScoped(c *gin.Context, customerID int64, customerType, status, search string, page, pageSize int) ([]*models.ThirdPartyContract, int, error) {
 	scope := middleware.GetDataScope(c)
+	// scope=nil 已在 EnsureListDataScope guard 层处理，此处简化判断
 	if scope == nil || scope.DataScope == "all" {
 		return database.ListThirdPartyContracts(customerID, customerType, status, search, page, pageSize)
 	}

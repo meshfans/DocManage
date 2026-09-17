@@ -113,6 +113,11 @@ func (h *CustomerHandler) GetCustomerList(c *gin.Context) {
 
 	// 2026-06-28 RBAC v3 P3：admin 看全部；非 admin（manager with data_scope=dept 等）按 scope 过滤。
 	// customer 表的 owner 列是 owner_user_id。
+	//
+	// 2026-09-17 P0-1 修复：scope=nil 时拒绝请求（EnsureListDataScope guard），防止退化到全量查询。
+	if !EnsureListDataScope(c) {
+		return
+	}
 	scope := middleware.GetDataScope(c)
 	var customers []database.Customer
 	var total int

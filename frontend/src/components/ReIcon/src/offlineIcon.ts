@@ -37,6 +37,14 @@ import RiBuildingLine from "~icons/ri/building-line?raw";
 import RiVipCrown2Line from "~icons/ri/vip-crown-2-line?raw";
 import RiGroupLine from "~icons/ri/group-line?raw";
 
+// 2026-09-17：资料库菜单图标（顶级菜单 + 子菜单）
+import RiFolderLine from "~icons/ri/folder-line?raw";
+import RiImage2Line from "~icons/ri/image-2-line?raw";
+// 关于我们页面图标
+import RiMailLine from "~icons/ri/mail-line?raw";
+import RiGlobalLine from "~icons/ri/global-line?raw";
+import RiWechat2Line from "~icons/ri/wechat-2-line?raw";
+
 const icons = [
   // Element Plus Icon: https://github.com/element-plus/element-plus-icons
   ["ep/home-filled", EpHomeFilled],
@@ -71,7 +79,14 @@ const icons = [
   ["ri/key-2-line", RiKey2Line],                 // 权限管理
   ["ri/user-line", RiUserLine],                   // 个人客户
   ["ri/building-line", RiBuildingLine],           // 企业客户
-  ["ri/group-line", RiGroupLine]                  // 客户列表（备用）
+  ["ri/group-line", RiGroupLine],                 // 客户列表（备用）
+  // 2026-09-17：资料库菜单（顶级菜单 + 子菜单）
+  ["ri/folder-line", RiFolderLine],               // 资料库顶级菜单
+  ["ri/image-2-line", RiImage2Line],               // 媒体库（子菜单）
+  // 关于我们页面图标
+  ["ri/mail-line", RiMailLine],                   // 邮箱
+  ["ri/global-line", RiGlobalLine],               // 网站
+  ["ri/wechat-2-line", RiWechat2Line]            // 微信
 ];
 
 // 本地菜单图标，后端在路由的 icon 中返回对应的图标字符串并且前端在此处使用 addIcon 添加即可渲染菜单图标

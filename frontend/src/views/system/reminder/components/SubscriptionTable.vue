@@ -215,12 +215,11 @@ function handleCreate() {
       v-loading="loading"
       :data="list"
       stripe
-      border
       style="width: 100%"
       empty-text="暂无订阅"
     >
       <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="template_name" label="提醒规则" min-width="160">
+      <el-table-column prop="template_name" label="提醒规则" min-width="180">
         <template #default="{ row }">
           <div>{{ row.template_name || row.template_key || "-" }}</div>
           <div class="sub">
@@ -288,7 +287,7 @@ function handleCreate() {
           {{ formatTimestampLang(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="100" fixed="right">
         <template #default="{ row }">
           <el-button
             v-perms="'reminder:subscriptions:update'"

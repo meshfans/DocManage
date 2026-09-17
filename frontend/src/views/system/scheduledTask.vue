@@ -115,7 +115,7 @@
             <span style="color: #f56c6c">{{ row.fail_count }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleViewLogs(row)">
               日志
@@ -351,7 +351,7 @@
         </el-table-column>
         <el-table-column label="原值" min-width="180">
           <template #default="{ row }">
-            <code style="font-size: 12px; color: #f56c6c">{{ row.old_value || "(空)" }}</code>
+            <code class="code-text code-old">{{ row.old_value || "(空)" }}</code>
           </template>
         </el-table-column>
         <el-table-column label="→" width="40" align="center">
@@ -361,7 +361,7 @@
         </el-table-column>
         <el-table-column label="新值" min-width="180">
           <template #default="{ row }">
-            <code style="font-size: 12px; color: #67c23a">{{ row.new_value || "(空)" }}</code>
+            <code class="code-text code-new">{{ row.new_value || "(空)" }}</code>
           </template>
         </el-table-column>
         <el-table-column label="操作人" width="120">
@@ -397,11 +397,11 @@
           :label="change.label"
         >
           <div style="display: flex; align-items: center; gap: 8px">
-            <code style="color: #f56c6c; background: #fef0f0; padding: 2px 6px; border-radius: 3px">
+            <code class="diff-old">
               {{ change.oldVal || "(空)" }}
             </code>
             <el-icon><Right /></el-icon>
-            <code style="color: #67c23a; background: #f0f9eb; padding: 2px 6px; border-radius: 3px">
+            <code class="diff-new">
               {{ change.newVal || "(空)" }}
             </code>
           </div>
@@ -848,9 +848,12 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 与 system/user.vue、system/department.vue、system/backup.vue 保持一致的容器样式 */
 .scheduled-task-container {
   padding: 16px;
 }
+
+/* 操作列按钮紧凑对齐 */
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -873,9 +876,34 @@ onMounted(() => {
 }
 code {
   font-family: "Consolas", "Monaco", monospace;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   padding: 1px 4px;
   border-radius: 3px;
-  color: #d63384;
+  color: var(--el-color-danger);
+}
+code.code-text {
+  font-size: 12px;
+}
+code.code-old {
+  color: var(--el-color-danger);
+  background: transparent;
+  padding: 0;
+}
+code.code-new {
+  color: var(--el-color-success);
+  background: transparent;
+  padding: 0;
+}
+code.diff-old {
+  color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+code.diff-new {
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 </style>

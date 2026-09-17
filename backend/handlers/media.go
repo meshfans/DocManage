@@ -95,6 +95,11 @@ func (h *MediaHandler) List(c *gin.Context) {
 	// 2026-06-28 RBAC v3 B2 修复：data_scope=self 时强制 taken_by=自己（向后兼容）；
 	// 其他 data_scope 模式不过滤，由 BuildWhereSQL 的 department_id 决定范围。
 	// 例外：如果已按 customer_id 过滤，则保留该过滤（员工查某客户档案时用）。
+	//
+	// 2026-09-17 P0-1 修复：scope=nil 时拒绝请求（EnsureListDataScope guard）。
+	if !EnsureListDataScope(c) {
+		return
+	}
 	if !isAdmin && filter.TakenBy == 0 && filter.CustomerID == 0 {
 		scope := middleware.GetDataScope(c)
 		if scope == nil || scope.DataScope == "self" || scope.DataScope == "" {

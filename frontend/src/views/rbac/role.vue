@@ -111,42 +111,53 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <!-- 分配权限复用 rbac:roles:upsert 权限码（与后端 handler 一致）-->
-            <el-button
-              v-perms="'rbac:roles:upsert'"
-              link
-              type="primary"
-              size="small"
-              @click="handleAssignPerms(row)"
-            >
-              分配权限
-            </el-button>
-            <!-- 2026-06-25 A.3 修复：系统预置 role 不可编辑（与 is_system=1 在后端对应） -->
-            <el-button
-              v-perms="'rbac:roles:upsert'"
-              link
-              type="primary"
-              size="small"
-              :disabled="row.is_system"
-              @click="handleEdit(row)"
-            >
-              编辑
-            </el-button>
-            <el-button link type="success" size="small" @click="handleTestRole(row)">
-              权限测试
-            </el-button>
-            <el-button
-              v-perms="'rbac:roles:delete'"
-              link
-              type="danger"
-              size="small"
-              :disabled="row.is_system"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
+            <span class="op-cell">
+              <!-- 分配权限复用 rbac:roles:upsert 权限码（与后端 handler 一致）-->
+              <el-button
+                v-perms="'rbac:roles:upsert'"
+                link
+                type="primary"
+                size="small"
+                @click="handleAssignPerms(row)"
+              >
+                分配权限
+              </el-button>
+              <el-dropdown trigger="click" @command="(cmd: string) => {
+                if (cmd === 'edit') handleEdit(row);
+                else if (cmd === 'test') handleTestRole(row);
+                else if (cmd === 'delete') handleDelete(row);
+              }">
+                <el-button type="primary" link size="small" class="op-more">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <!-- 2026-06-25 A.3 修复：系统预置 role 不可编辑（与 is_system=1 在后端对应） -->
+                    <el-dropdown-item
+                      v-perms="'rbac:roles:upsert'"
+                      :disabled="row.is_system"
+                      command="edit"
+                    >
+                      编辑
+                    </el-dropdown-item>
+                    <el-dropdown-item command="test">
+                      权限测试
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      v-perms="'rbac:roles:delete'"
+                      :disabled="row.is_system"
+                      command="delete"
+                      divided
+                      style="color: var(--el-color-danger)"
+                    >
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -351,7 +362,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive, nextTick, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Search, Refresh, Plus, UserFilled } from "@element-plus/icons-vue";
+import { Search, Refresh, Plus, UserFilled, ArrowDown } from "@element-plus/icons-vue";
 import {
   listRoles,
   upsertRole,
@@ -759,6 +770,27 @@ onMounted(async () => {
 /* 与 system/user.vue、system/department.vue、system/backup.vue 保持一致的容器样式 */
 .role-container {
   padding: 20px;
+}
+
+/* 操作列按钮紧凑对齐 */
+.op-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+}
+.op-cell .el-button {
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+.op-cell .op-more {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  margin-left: 12px !important;
+}
+.op-cell .op-more .el-icon {
+  margin-left: 0 !important;
 }
 
 .card-header {

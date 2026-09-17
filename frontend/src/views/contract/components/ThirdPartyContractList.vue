@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { ArrowDown } from "@element-plus/icons-vue";
 import { formatTimestampLang } from "@/utils/date";
 import {
   listThirdPartyContracts,
@@ -30,6 +31,12 @@ defineExpose({
 const props = defineProps<{
   // 客户视图下传入：仅显示该客户下的文档
   customerId?: number;
+  // 是否显示筛选工具栏（父组件 header 中展示时隐藏）
+  hideToolbar?: boolean;
+  // 外部传入的筛选条件（父组件 header 模式时使用）
+  searchKeyword?: string;
+  statusFilter?: string;
+  typeFilter?: "" | "individual" | "enterprise";
 }>();
 
 const router = useRouter();
@@ -39,9 +46,22 @@ const customerMap = ref<Record<string, CustomerLite>>({});
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(10);
-const searchKeyword = ref("");
-const statusFilter = ref("");
-const typeFilter = ref<"" | "individual" | "enterprise">("");
+// 内部状态：hideToolbar=true 时从 props 读取，hideToolbar=false 时用内部状态
+const searchKeyword = computed({
+  get: () => props.hideToolbar ? (props.searchKeyword || "") : _searchKeyword.value,
+  set: (v) => { if (!props.hideToolbar) _searchKeyword.value = v; }
+});
+const _searchKeyword = ref("");
+const statusFilter = computed({
+  get: () => props.hideToolbar ? (props.statusFilter || "") : _statusFilter.value,
+  set: (v) => { if (!props.hideToolbar) _statusFilter.value = v; }
+});
+const _statusFilter = ref("");
+const typeFilter = computed({
+  get: () => props.hideToolbar ? (props.typeFilter || "") : _typeFilter.value,
+  set: (v) => { if (!props.hideToolbar) _typeFilter.value = v; }
+});
+const _typeFilter = ref<"" | "individual" | "enterprise">("");
 
 async function loadList() {
   loading.value = true;
@@ -309,7 +329,8 @@ function nextStatusOptions(s: string) {
 
 <template>
   <div class="third-party-list-container">
-    <div class="list-header">
+    <!-- 筛选工具栏：默认显示，customerId 视图下隐藏 -->
+    <div v-if="!hideToolbar" class="list-header">
       <span class="list-title"></span>
       <div class="header-actions">
         <el-input
@@ -382,7 +403,6 @@ function nextStatusOptions(s: string) {
       ref="tableRef"
       v-loading="loading"
       :data="contracts"
-      border
       style="width: 100%"
       @selection-change="handleSelectionChange"
     >
@@ -401,7 +421,7 @@ function nextStatusOptions(s: string) {
         <el-table-column
           prop="contract_no"
           label="合同号"
-          width="180"
+          width="280"
           align="center"
         />
         <el-table-column
@@ -463,26 +483,30 @@ function nextStatusOptions(s: string) {
             {{ formatTimestampLang(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right" align="center">
+        <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleDownload(row)">
-              下载
-            </el-button>
-            <el-button link type="primary" size="small" @click="handleView(row)">
-              查看
-            </el-button>
-            <el-button link type="warning" size="small" @click="openReminderDialog(row)">
-              提醒
-            </el-button>
-            <el-button
-              v-if="canTPDelete(row.status)"
-              link
-              type="danger"
-              size="small"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
+            <span class="op-cell">
+              <el-button link type="primary" size="small" @click="handleDownload(row)">
+                下载
+              </el-button>
+              <el-button link type="primary" size="small" @click="handleView(row)">
+                查看
+              </el-button>
+              <el-dropdown trigger="click" @command="(cmd: string) => {
+                if (cmd === 'reminder') openReminderDialog(row);
+                else if (cmd === 'delete') handleDelete(row);
+              }">
+                <el-button type="primary" link size="small" class="op-more">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="reminder">提醒</el-dropdown-item>
+                    <el-dropdown-item v-if="canTPDelete(row.status)" command="delete" divided style="color: var(--el-color-danger)">删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -535,15 +559,34 @@ function nextStatusOptions(s: string) {
 :deep(.el-table) {
   font-size: 14px;
 }
-:deep(.el-button + .el-button) {
-  margin-left: 8px;
-}
+
 .customer-cell {
   display: flex;
   align-items: center;
   gap: 6px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* 操作列按钮紧凑对齐 */
+.op-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+}
+.op-cell .el-button {
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+.op-cell .op-more {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  margin-left: 12px !important;
+}
+.op-cell .op-more .el-icon {
+  margin-left: 0 !important;
 }
 
 /* 第十阶段 5% 收尾：批量下载工具栏 */

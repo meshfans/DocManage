@@ -255,6 +255,11 @@ func (h *ReminderHandler) ListSubscriptions(c *gin.Context) {
 	}
 	// 2026-06-29 RBAC v3 P1：admin 看全部；其他用户按 data_scope 过滤。
 	// reminder_subscription.created_by 是 owner（白名单 created_by），department_id 已加列。
+	//
+	// 2026-09-17 P0-1 修复：scope=nil 时拒绝请求（EnsureListDataScope guard）。
+	if !EnsureListDataScope(c) {
+		return
+	}
 	scope := middleware.GetDataScope(c)
 	var list []database.ReminderSubscription
 	var total int

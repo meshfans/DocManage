@@ -344,7 +344,7 @@ onMounted(() => {
               </template>
             </el-table-column>
             <el-table-column prop="sort_order" label="排序" width="70" align="center" />
-            <el-table-column label="操作" width="180" fixed="right" align="center">
+            <el-table-column label="操作" width="100" fixed="right" align="center">
               <template #default="{ row }">
                 <el-button
                   v-perms="'reminder:templates:update'"

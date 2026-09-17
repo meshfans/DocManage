@@ -130,7 +130,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <!-- 2026-06-25 A.3 修复：系统预置 permission 不可编辑（与 is_system=1 在后端对应） -->
             <el-button

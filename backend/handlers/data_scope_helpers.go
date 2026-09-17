@@ -8,9 +8,18 @@ package handlers
 //	    utils.Error(c, 403, "无权访问")
 //	    return
 //	}
+//
+// 2026-09-17 P0-1 修复：新增 EnsureListDataScope，scope=nil 时拒绝请求而非退化到"看全部"。
+//
+// 调用示例：
+//
+//	if !EnsureListDataScope(c) {
+//	    return
+//	}
 
 import (
 	"doc/middleware"
+	"doc/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -73,4 +82,34 @@ func CheckDataScopeAccess(c *gin.Context, ownerID, departmentID int64) bool {
 		return false
 	}
 	return false
+}
+
+// EnsureListDataScope 2026-09-17 P0-1 修复：list 端点入口 guard。
+// 问题：DataScopeMiddleware 加载失败时注入 nil scope，handler 内 "scope == nil" 被当作 "all" 处理，
+// 导致 DB 抖动期间任意登录用户可看到全量数据。
+//
+// 规则：
+//   1. admin → 直接返回 true（全量权限，scope 加载失败不影响）
+//   2. 非 admin + scope == nil → 拒绝请求，记录 Error 日志，返回 500
+//   3. 非 admin + scope != nil → 返回 true（由调用方判断 scope.DataScope 决定过滤范围）
+//
+// 注意：本函数仅处理 scope=nil 的安全兜底，不替代各 handler 内 "scope.DataScope == all" 的业务分支。
+func EnsureListDataScope(c *gin.Context) bool {
+	if IsAdminUser(c) {
+		return true
+	}
+	scope := middleware.GetDataScope(c)
+	if scope == nil {
+		username := c.GetString("username")
+		utils.LogError("[data_scope] scope=nil，拒绝 list 请求以防止全量泄露: username=%s, path=%s, ip=%s",
+			username, c.Request.URL.Path, c.ClientIP())
+		utils.Err(c, utils.CodeInternal, "数据权限未就绪，请稍后重试（data_scope 加载失败）")
+		return false
+	}
+	if scope.DataScope == "" {
+		utils.LogError("[data_scope] scope.DataScope 为空，异常...")
+		utils.Err(c, utils.CodeInternal, "数据权限配置异常，请联系管理员")
+		return false
+	}
+	return true
 }

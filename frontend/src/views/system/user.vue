@@ -64,47 +64,39 @@
             <span v-if="!row.roles || row.roles.length === 0" style="color: #c0c4cc">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="290" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">
-              编辑
-            </el-button>
-            <el-button link type="primary" size="small" @click="handleChangeDepartment(row)">
-              调整部门
-            </el-button>
-            <!-- 分配角色：内置 admin 用户禁用（后端也会拒绝，但 UI 提前禁用更友好） -->
-            <el-button
-              link
-              type="warning"
-              size="small"
-              :disabled="row.username === 'admin'"
-              @click="handleAssignRoles(row)"
-            >
-              分配角色
-            </el-button>
-            <template v-if="row.username !== 'admin'">
-              <el-button
-                v-if="row.status === 'active'"
-                link
-                type="warning"
-                size="small"
-                @click="handleToggleStatus(row)"
-              >
-                禁用
+            <span class="op-cell">
+              <el-button link type="primary" size="small" @click="handleEdit(row)">
+                编辑
               </el-button>
-              <el-button
-                v-else
-                link
-                type="success"
-                size="small"
-                @click="handleToggleStatus(row)"
-              >
-                启用
+              <el-button link type="primary" size="small" @click="handleChangeDepartment(row)">
+                调整部门
               </el-button>
-              <el-button link type="danger" size="small" @click="handleDelete(row)">
-                删除
-              </el-button>
-            </template>
+              <el-dropdown trigger="click" @command="(cmd: string) => {
+                if (cmd === 'roles') handleAssignRoles(row);
+                else if (cmd === 'disable') handleToggleStatus(row);
+                else if (cmd === 'enable') handleToggleStatus(row);
+                else if (cmd === 'delete') handleDelete(row);
+              }">
+                <el-button type="primary" link size="small" class="op-more">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item :disabled="row.username === 'admin'" command="roles">
+                      分配角色
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="row.username !== 'admin'" command="disable" divided>
+                      {{ row.status === 'active' ? '禁用' : '启用' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="row.username !== 'admin'" command="delete" divided style="color: var(--el-color-danger)">
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -267,6 +259,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { ArrowDown } from "@element-plus/icons-vue";
 import {
   getUsers,
   createUser,
@@ -612,5 +605,26 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+/* 操作列按钮紧凑对齐 */
+.op-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+}
+.op-cell .el-button {
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+.op-cell .op-more {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  margin-left: 12px !important;
+}
+.op-cell .op-more .el-icon {
+  margin-left: 0 !important;
 }
 </style>
