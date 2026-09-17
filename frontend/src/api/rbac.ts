@@ -57,7 +57,7 @@ export function upsertRole(data: Partial<Role>) {
 }
 
 export function deleteRole(code: string) {
-  return http.request("delete", `/api/rbac/roles/${code}`);
+  return http.request("post", `/api/rbac/roles/${code}/delete`);
 }
 
 // ===== Permissions =====
@@ -74,7 +74,7 @@ export function upsertPermission(data: Partial<Permission>) {
 }
 
 export function deletePermission(code: string) {
-  return http.request("delete", `/api/rbac/permissions/${code}`);
+  return http.request("post", `/api/rbac/permissions/${code}/delete`);
 }
 
 // ===== Check =====

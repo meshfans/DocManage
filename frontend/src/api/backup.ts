@@ -82,11 +82,11 @@ export function getBackup(id: number) {
   return http.request<ApiEnvelope<BackupManifest>>("get", `/api/backup/${id}`);
 }
 
-/** DELETE /api/backup/:id */
+/** POST /api/backup/:id/delete */
 export function deleteBackup(id: number) {
   return http.request<{ success: boolean; message?: string }>(
-    "delete",
-    `/api/backup/${id}`
+    "post",
+    `/api/backup/${id}/delete`
   );
 }
 
