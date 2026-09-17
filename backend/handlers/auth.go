@@ -174,6 +174,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		effectivePerms = []string{}
 	}
 	response := models.UserToken{
+		ID:                user.ID,
 		Avatar:            userAPI.Avatar,
 		Username:          userAPI.Username,
 		Nickname:          userAPI.Nickname,
@@ -324,6 +325,7 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 		effectivePerms = []string{}
 	}
 	response := models.UserToken{
+		ID:                user.ID,
 		Avatar:            userAPI.Avatar,
 		Username:          userAPI.Username,
 		Nickname:          userAPI.Nickname,

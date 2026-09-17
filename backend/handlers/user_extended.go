@@ -2,9 +2,14 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"doc/config"
 	"doc/database"
 	"doc/middleware"
 	"doc/models"
@@ -13,10 +18,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type UserExtendedHandler struct{}
+type UserExtendedHandler struct {
+	cfg *config.Config
+}
 
-func NewUserExtendedHandler() *UserExtendedHandler {
-	return &UserExtendedHandler{}
+func NewUserExtendedHandler(cfg *config.Config) *UserExtendedHandler {
+	return &UserExtendedHandler{cfg: cfg}
 }
 
 func (h *UserExtendedHandler) GetUsers(c *gin.Context) {
@@ -245,6 +252,7 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 		EmployeeNo   string   `json:"employee_no"`
 		DepartmentID *int64   `json:"department_id"`
 		Status       string   `json:"status"`
+		Avatar       string   `json:"avatar"`
 		Roles        []string `json:"roles"`
 	}
 
@@ -271,7 +279,7 @@ func (h *UserExtendedHandler) UpdateUser(c *gin.Context) {
 	}
 
 	err = database.UpdateUserDetails(id, req.Username, req.Password, req.Nickname, req.RealName, req.Email, req.Phone,
-		req.Position, req.EmployeeNo, req.Status, req.DepartmentID)
+		req.Position, req.EmployeeNo, req.Status, req.Avatar, req.DepartmentID)
 	if err != nil {
 		utils.Err(c, utils.CodeInternal, err.Error())
 		return
@@ -382,9 +390,9 @@ func (h *UserExtendedHandler) AssignUserRoles(c *gin.Context) {
 	// Round 19 #6：用户角色分配是高敏感操作，写 audit_log。
 	// target_type='rbac_user_binding'，action='assign'，detail 含 old/new roles + username。
 	database.RecordAudit(c, database.AuditTargetRBACUserBinding, id, "assign", gin.H{
-		"username":   oldUser.Username,
-		"old_roles":  oldUser.Roles, // JSON 字符串原样存
-		"new_roles":  req.Roles,
+		"username":  oldUser.Username,
+		"old_roles": oldUser.Roles, // JSON 字符串原样存
+		"new_roles": req.Roles,
 	})
 
 	utils.Success(c, gin.H{
@@ -417,6 +425,151 @@ func (h *UserExtendedHandler) DeleteUser(c *gin.Context) {
 
 	utils.Success(c, gin.H{
 		"message": "用户删除成功",
+	})
+}
+
+// GetAvatar GET /api/users/:id/avatar
+// 获取用户头像（返回文件流，支持 Blob 渲染）
+func (h *UserExtendedHandler) GetAvatar(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		utils.BadRequest(c, "无效的用户ID")
+		return
+	}
+
+	user, err := database.GetUserByID(userID)
+	if err != nil || user == nil {
+		utils.Err(c, utils.CodeNotFound, "用户不存在")
+		return
+	}
+
+	if user.Avatar == "" {
+		utils.Err(c, utils.CodeNotFound, "用户未设置头像")
+		return
+	}
+
+	// 拼接绝对路径
+	// DB 中存的是相对 Upload.Dir 的路径，如 "avatar/1.jpg"
+	avatarRel := filepath.Join("avatar", filepath.Base(user.Avatar))
+	var absPath string
+	if filepath.IsAbs(avatarRel) {
+		absPath = avatarRel
+	} else {
+		absPath = filepath.Join(h.cfg.Upload.Dir, avatarRel)
+	}
+	utils.Info("[GetAvatar] user.Avatar=%q → absPath=%q (Upload.Dir=%q)", user.Avatar, absPath, h.cfg.Upload.Dir)
+	if _, err := os.Stat(absPath); err != nil {
+		utils.Err(c, utils.CodeNotFound, "头像文件不存在: "+absPath)
+		return
+	}
+
+	// 根据扩展名设置 Content-Type
+	ext := strings.ToLower(filepath.Ext(absPath))
+	contentType := "application/octet-stream"
+	switch ext {
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	case ".png":
+		contentType = "image/png"
+	case ".gif":
+		contentType = "image/gif"
+	case ".webp":
+		contentType = "image/webp"
+	}
+
+	c.Header("Content-Type", contentType)
+	c.File(absPath)
+}
+
+// UploadAvatar POST /api/users/:id/avatar
+// 上传用户头像（前端导出 webp，后端直接保存到 avatar/{id}.webp，覆盖模式）
+// 仅本人或管理员可操作。
+func (h *UserExtendedHandler) UploadAvatar(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		utils.BadRequest(c, "无效的用户ID")
+		return
+	}
+
+	// 权限校验：本人或管理员
+	currentUserID := c.GetInt64("user_id")
+	if !IsAdminUser(c) && currentUserID != userID {
+		utils.Err(c, utils.CodeForbidden, "只能修改自己的头像")
+		return
+	}
+
+	// 用户存在性校验
+	user, err := database.GetUserByID(userID)
+	if err != nil || user == nil {
+		utils.Err(c, utils.CodeNotFound, "用户不存在")
+		return
+	}
+
+	// 读取文件
+	file, err := c.FormFile("file")
+	if err != nil {
+		utils.Err(c, utils.CodeInvalidParam, "请选择头像图片")
+		return
+	}
+
+	// 限制大小 5MB
+	if file.Size > 5*1024*1024 {
+		utils.Err(c, utils.CodeInvalidParam, "头像图片不能超过 5MB")
+		return
+	}
+
+	// 限制格式
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" && ext != ".webp" {
+		utils.Err(c, utils.CodeInvalidParam, "仅支持 jpg、png、gif、webp 格式")
+		return
+	}
+
+	// 打开文件
+	f, err := file.Open()
+	if err != nil {
+		utils.Err(c, utils.CodeInternal, "读取文件失败")
+		return
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		utils.Err(c, utils.CodeInternal, "读取文件失败")
+		return
+	}
+
+	// 创建 avatar 目录（使用配置的 upload.dir）
+	avatarDir := filepath.Join(h.cfg.Upload.Dir, "avatar")
+	if err := os.MkdirAll(avatarDir, 0755); err != nil {
+		utils.Err(c, utils.CodeInternal, "创建头像目录失败")
+		return
+	}
+
+	avatarPath := filepath.Join(avatarDir, fmt.Sprintf("%d%s", userID, ext))
+	if err := os.WriteFile(avatarPath, data, 0644); err != nil {
+		utils.Err(c, utils.CodeInternal, "保存头像失败")
+		return
+	}
+
+	// 更新数据库（相对 Upload.Dir 的路径，不再含 "uploads" 前缀）
+	// 例：Upload.Dir = "./bin/uploads/" → DB 存 "avatar/1.webp"（前端已导出 webp）
+	relativePath := filepath.Join("avatar", fmt.Sprintf("%d%s", userID, ext))
+	if err := database.UpdateUserAvatar(userID, relativePath); err != nil {
+		// 清理文件
+		os.Remove(avatarPath)
+		utils.Err(c, utils.CodeInternal, "更新头像失败")
+		return
+	}
+
+	// 审计
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, userID, "avatar.update", gin.H{})
+
+	utils.Success(c, gin.H{
+		"avatar":  relativePath,
+		"message": "头像上传成功",
 	})
 }
 

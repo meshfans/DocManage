@@ -1,27 +1,81 @@
 // avatar 解析工具
-// 第十三阶段 v4：DB 存的是字符串，需要映射到前端可用的 URL
+// 参考 /library/media 的 fetchMediaThumb 模式：
+//   - 后端存路径 → 前端通过 fetchUserAvatar(id) 获取 blob URL 显示
+//   - 调用方负责在 unmount 时 revoke 释放内存
+//
 // 特殊值：
-//   - "" / null / undefined → 返回默认头像 user.jpg
-//   - "logo.png"              → 返回本地 logo 资源
+//   - "" / null / undefined → 返回默认头像 user.jpg (logo.png)
+//   - "logo.png" → 返回本地 logo 资源
+//   - "uploads/avatar/{id}.{ext}" → 异步获取 blob 转 data URL（fallback）
 //   - "http://..." / "https://..." / "/" 开头 → 原样返回
-//   - 其他（如 "/uploads/xxx.png"）→ 原样返回
 
 import DefaultAvatar from "@/assets/logo.png";
 import LogoAsset from "@/assets/logo.png";
+import { fetchUserAvatar as apiFetchUserAvatar } from "@/api/user_extended";
 
 /**
- * 解析 avatar 字段为可用的 URL。
- * @param avatar DB 存的 avatar 字符串
- * @returns 浏览器可直接加载的 URL
+ * 检查是否是用户头像路径（uploads/avatar/{id}.{ext}）
  */
-export function resolveAvatar(avatar: string | null | undefined): string {
+export function isUserAvatar(avatar: string | null | undefined): boolean {
+  if (!avatar) return false;
+  return /^uploads[/\\]avatar[/\\]\d+\.\w+$/i.test(avatar);
+}
+
+/**
+ * 同步解析 avatar 路径（用于获取原始路径）
+ */
+export function resolveAvatarPath(avatar: string | null | undefined): string {
   if (!avatar || avatar.trim() === "") {
     return DefaultAvatar;
   }
-  // 特殊关键字：DB 存的 "logo.png" → 映射到 import 后的资源
   if (avatar === "logo.png") {
     return LogoAsset;
   }
-  // URL / 绝对路径 / data URI / 相对路径：原样返回
   return avatar;
+}
+
+/**
+ * 异步获取用户头像的 data URL（fallback 模式）
+ * @deprecated 推荐使用 fetchUserAvatarUrl（blob URL，性能更好）
+ */
+export async function fetchAvatarDataUrl(
+  avatarPath: string,
+  userId: number
+): Promise<string | null> {
+  try {
+    const { url, revoke } = await apiFetchUserAvatar(userId);
+    // dataUrl 模式暂保持兼容：调用方应自己 revoke
+    setTimeout(revoke, 60_000);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 获取用户头像的 blob URL（推荐，与媒体库一致）
+ */
+export async function fetchUserAvatarUrl(
+  userId: number
+): Promise<{ url: string; revoke: () => void } | null> {
+  try {
+    return await apiFetchUserAvatar(userId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 清除头像缓存（保留接口兼容）
+ */
+export function clearAvatarCache(): void {
+  // 现在头像 URL 不再缓存，调用方自己管理 revoke
+}
+
+/**
+ * 同步解析 avatar 路径（兼容旧用法）
+ * @deprecated 使用 resolveAvatarPath
+ */
+export function resolveAvatar(avatar: string | null | undefined): string {
+  return resolveAvatarPath(avatar);
 }

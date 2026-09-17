@@ -17,6 +17,7 @@
  *  - 总时长 ~280ms，不打扰用户。
  */
 import { getPublicSystemConfigs } from "@/api/system_config";
+import { getToken } from "@/utils/auth";
 
 // 模块级状态（前端 SPA 单实例天然共享，无需 Pinia）
 let enabled: boolean | null = null; // null = 未初始化（启动前）
@@ -32,6 +33,11 @@ let audioCtx: AudioContext | null = null; // 懒加载：首次播放才创建
  * 通常在 main.ts 启动时调用一次；切换路由 / 重新登录可再次调用。
  */
 export async function refreshNotificationSoundPref(): Promise<void> {
+  // 只在已登录（有 token）时才调用
+  if (!getToken()) {
+    return;
+  }
+
   try {
     const res = await getPublicSystemConfigs();
     const v = res.data?.notification_sound_enabled;

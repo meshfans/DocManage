@@ -19,12 +19,17 @@ import EyeLine from "~icons/ri/eye-line";
 import EyeOffLine from "~icons/ri/eye-off-line";
 // 后退
 import ArrowLeftLine from "~icons/ri/arrow-left-line";
+// 头像
+import UserFill from "~icons/ri/user-fill";
 
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
-import { changePassword } from "@/api/user";
+import { changePassword, getUserInfo } from "@/api/user";
+import { uploadAvatar } from "@/api/user_extended";
 import { PASSWORD_MIN, PASSWORD_MAX, validatePasswordStrength } from "@/utils/password";
 import { isDocClient } from "@/utils/isDocClient";
 import { bridgeCall } from "@/utils/docClientBridge";
+import { refreshNavAvatar } from "@/layout/hooks/useNav";
+import AvatarCropper from "@/components/AvatarCropper/index.vue";
 
 const {
   layout,
@@ -91,6 +96,64 @@ const openChangePassword = () => {
 
 const closeChangePassword = () => {
   pwdDialogVisible.value = false;
+};
+
+// ==================== 修改头像 ====================
+const avatarUploading = ref(false);
+const currentUserId = ref<number | null>(null);
+const avatarCropperRef = ref();
+
+// 点击"修改头像" - 直接打开文件选择器（弹出系统文件选择）
+const openChangeAvatar = async () => {
+  // 确保拿到 userId（裁剪完成后需要）
+  if (!currentUserId.value) {
+    try {
+      const res: any = await getUserInfo();
+      if (res?.success && res.data?.id) {
+        currentUserId.value = res.data.id;
+      }
+    } catch (e) {
+      console.error("[avatar] failed to get user info", e);
+    }
+  }
+  // 触发 AvatarCropper 内置的文件选择
+  avatarCropperRef.value?.open();
+};
+
+// 裁剪确认后上传
+const handleCropConfirm = async (blob: Blob) => {
+  if (!currentUserId.value) {
+    try {
+      const res: any = await getUserInfo();
+      if (res?.success && res.data?.id) {
+        currentUserId.value = res.data.id;
+      } else {
+        ElMessage.error("获取用户信息失败");
+        return;
+      }
+    } catch (e) {
+      ElMessage.error("获取用户信息失败");
+      return;
+    }
+  }
+
+  avatarUploading.value = true;
+  try {
+    // blob 转 File
+    const file = new File([blob], "avatar.webp", { type: "image/webp" });
+    const res: any = await uploadAvatar(currentUserId.value, file);
+    if (res?.success) {
+      // 不写 store，直接调用 GET /api/users/:id/avatar 拉取最新头像 blob URL
+      await refreshNavAvatar();
+      ElMessage.success("头像上传成功");
+    } else {
+      ElMessage.error(res?.message || "头像上传失败");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "头像上传失败");
+  } finally {
+    avatarUploading.value = false;
+  }
 };
 
 const submitChangePassword = async () => {
@@ -311,6 +374,13 @@ watch(
         </span>
         <template #dropdown>
           <el-dropdown-menu class="logout">
+            <el-dropdown-item @click="openChangeAvatar">
+              <IconifyIconOffline
+                :icon="UserFill"
+                style="margin: 5px"
+              />
+              修改头像
+            </el-dropdown-item>
             <el-dropdown-item @click="openChangePassword">
               <IconifyIconOffline
                 :icon="LockPasswordLine"
@@ -318,7 +388,7 @@ watch(
               />
               修改密码
             </el-dropdown-item>
-            <el-dropdown-item @click="logout">
+            <el-dropdown-item divided @click="logout">
               <IconifyIconOffline
                 :icon="LogoutCircleRLine"
                 style="margin: 5px"
@@ -385,6 +455,12 @@ watch(
           </el-button>
         </template>
       </el-dialog>
+
+      <!-- 头像裁剪弹窗（自包含文件选择 + 裁剪 + 上传确认） -->
+      <AvatarCropper
+        ref="avatarCropperRef"
+        @confirm="handleCropConfirm"
+      />
       <span
           class="set-icon navbar-bg-hover"
           title="打开系统配置"
@@ -565,4 +641,6 @@ watch(
     }
   }
 }
+
+/* 修改头像弹窗样式已移除 - 直接使用 AvatarCropper */
 </style>

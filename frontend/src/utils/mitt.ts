@@ -9,6 +9,7 @@ type Events = {
   tagViewsChange: string;
   changLayoutRoute: string;
   tagViewsShowModel: string;
+  refreshAvatar: void;
 };
 
 export const emitter: Emitter<Events> = mitt<Events>();

@@ -15,7 +15,7 @@
   "database": {
     "path": "./bin/data/doc.db",
     "mode": "test",
-    "journal_mode": "DELETE",
+    "journal_mode": "WAL",
     "synchronous": "NORMAL",
     "cache_size": -64000,
     "wal_autocheckpoint": 1000,

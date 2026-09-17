@@ -442,16 +442,17 @@ onUnmounted(() => stopTimer);
         </button>
       </span>
 
-      <p :class="['mt-4!', pClass]">页签风格</p>
+      <p :class="['mt-4!', pClass]" style="display: none;">页签风格</p>
       <Segmented
         resize
         class="select-none"
         :modelValue="markValue === 'smart' ? 0 : markValue === 'card' ? 1 : 2"
         :options="markOptions"
+        v-if="false"
         @change="onChange"
       />
 
-      <p class="mt-5! font-medium text-sm dark:text-white">界面显示</p>
+      <p class="mt-5! font-medium text-sm dark:text-white" style="display: none;">界面显示</p>
       <ul class="setting">
         <li>
           <span class="dark:text-white">灰色模式</span>

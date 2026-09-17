@@ -5,6 +5,8 @@ export type UserResult = {
   /** 业务消息（登录失败时由后端返回） */
   message?: string;
   data: {
+    /** 用户ID */
+    id?: number;
     /** 头像 */
     avatar: string;
     /** 用户名 */

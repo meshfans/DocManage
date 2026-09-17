@@ -35,6 +35,7 @@ type LoginResponse struct {
 }
 
 type UserToken struct {
+	ID                int64    `json:"id"`
 	Avatar            string   `json:"avatar"`
 	Username          string   `json:"username"`
 	Nickname          string   `json:"nickname"`

@@ -469,7 +469,7 @@ func GetUserIDsByDepartmentSubtree(rootDeptID int64) ([]int64, error) {
 }
 
 // UpdateUserDetails 按需更新用户字段（空字符串表示不动该字段）。
-func UpdateUserDetails(id int64, username, password, nickname, realName, email, phone, position, employeeNo, status string, departmentID *int64) error {
+func UpdateUserDetails(id int64, username, password, nickname, realName, email, phone, position, employeeNo, status, avatar string, departmentID *int64) error {
 	fields := []string{}
 	args := []interface{}{}
 
@@ -513,6 +513,10 @@ func UpdateUserDetails(id int64, username, password, nickname, realName, email, 
 		fields = append(fields, "status = ?")
 		args = append(args, status)
 	}
+	if avatar != "" {
+		fields = append(fields, "avatar = ?")
+		args = append(args, avatar)
+	}
 	if departmentID != nil {
 		fields = append(fields, "department_id = ?")
 		args = append(args, *departmentID)
@@ -523,6 +527,12 @@ func UpdateUserDetails(id int64, username, password, nickname, realName, email, 
 
 	query := fmt.Sprintf("UPDATE users SET %s WHERE id = ?", strings.Join(fields, ", "))
 	_, err := DB.Exec(query, args...)
+	return err
+}
+
+// UpdateUserAvatar 单独更新用户头像路径。
+func UpdateUserAvatar(userID int64, avatar string) error {
+	_, err := DB.Exec(`UPDATE users SET avatar = ?, updated_at = ? WHERE id = ?`, avatar, time.Now().Unix(), userID)
 	return err
 }
 

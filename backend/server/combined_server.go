@@ -95,6 +95,7 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 			api.POST("/refresh-token", middleware.RefreshTokenRateLimit(), authHandler.RefreshToken)
 			api.POST("/register", authHandler.Register)
 
+			// 公开接口（登录页也需要访问）
 			api.GET("/license/client-info", systemHandler.GetClientInfo)
 
 			protected := api.Group("")
@@ -116,7 +117,7 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/audit/reconcile", auditHandler.ReconcileAuditChain)
 
 				departmentHandler := handlers.NewDepartmentHandler()
-				userHandler := handlers.NewUserExtendedHandler()
+				userHandler := handlers.NewUserExtendedHandler(cfg)
 
 				protected.GET("/departments", departmentHandler.GetDepartmentTree)
 				protected.GET("/departments/:id", departmentHandler.GetDepartment)
@@ -133,6 +134,8 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/users/:id/delete", userHandler.DeleteUser)
 				protected.POST("/users/:id/department", userHandler.UpdateUserDepartment)
 				protected.POST("/users/:id/roles", userHandler.AssignUserRoles)
+				protected.GET("/users/:id/avatar", userHandler.GetAvatar)
+				protected.POST("/users/:id/avatar", userHandler.UploadAvatar)
 				protected.GET("/users/department/:id", userHandler.GetDepartmentUsers)
 
 				protected.GET("/user/info", authHandler.GetUserInfo)

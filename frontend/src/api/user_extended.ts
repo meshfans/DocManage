@@ -139,6 +139,28 @@ export const assignUserRoles = (id: number, data: { roles: string[] }) => {
   return http.post(`/api/users/${id}/roles`, data);
 };
 
+export const uploadAvatar = (id: number, file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return http.post(`/api/users/${id}/avatar`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data"
+    }
+  });
+};
+
+// 获取用户头像（返回 Blob URL）
+export const fetchUserAvatar = async (id: number): Promise<{ url: string; revoke: () => void }> => {
+  const blob = (await http.request("get", `/api/users/${id}/avatar`, {
+    responseType: "blob"
+  })) as Blob;
+  const objectUrl = URL.createObjectURL(blob);
+  return {
+    url: objectUrl,
+    revoke: () => URL.revokeObjectURL(objectUrl)
+  };
+};
+
 export const getDepartmentUsers = (departmentId: number) => {
   return http.request<UserListResult>("get", `/api/users/department/${departmentId}`);
 };
