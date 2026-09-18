@@ -305,7 +305,7 @@ func (h *AIConfigHandler) TestAIConfig(c *gin.Context) {
 	mmResult := ai.TestMultimodal(adapter)
 	if mmResult != nil {
 		testResult.Multimodal = &ai.MultimodalResult{
-			Supported: mmResult.Supported != nil && *mmResult.Supported,
+			Supported: mmResult.Supported, // 直接传递三态（nil=不确定）
 			LatencyMs: mmResult.LatencyMs,
 			Message:   mmResult.FullMessage,
 		}

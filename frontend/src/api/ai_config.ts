@@ -72,7 +72,7 @@ export interface AITestResult {
   provider?: string;
   model?: string;
   multimodal?: {
-    supported: boolean;
+    supported: boolean | null;
     message: string;
     latencyMs: number;
   };

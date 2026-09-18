@@ -301,6 +301,11 @@ function getMultimodalTag(row: AIConfigItem) {
   return { text: isManual ? "手动·不支持" : "不支持", type: "danger" as const, effect: isManual ? "light" as const : "plain" as const };
 }
 
+// "检测不确定" 状态标识（DB 值为 null，但返回的 test_result.multimodal.supported = null）
+function isMultimodalUncertain(row: AIConfigItem): boolean {
+  return row.multimodal_supported === null && (row.multimodal_checked_at ?? 0) > 0;
+}
+
 function parseTestResult(json: string | null | undefined): { ok: boolean; latencyMs: number; message: string } | null {
   if (!json) return null;
   try {

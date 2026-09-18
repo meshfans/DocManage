@@ -21,7 +21,7 @@ import (
 //   - 防止内容审核拒收 + OCR 准确率高
 //   - 生成器：services/ai/tools/gen-probe-png/main.go
 //   - 双份事实：与生成器同源，修改时需同步更新
-const ProbePNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAgAAAACgCAIAAAD1mUNqAAAC9UlEQVR4nOzcwY7TMBRAUYzy/79sdigsmMm0qZv0nrOiEnLtSdQrb97vXwAkCQBAlAAARAkAQNS2/zDnfN9OAHi5Mcbff7sBAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABEbc8vMcb49v/MOZetczVHznU1Zz2vqymf64iVZ7/jno9Y+Rv1/NndAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKJOmAXE11bOPFk5h+RTz3XEvea9HF/nauc6az93PNfr/j77ld0AAKIEACBKAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAorZ3bwDuZ4zx7i3ACe+hGwBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUWUDwY3POZd9l7hD/89h7uH+j3AAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKIEACBKAACitv2HMcYDS8w5z9vPNx7b4eusPPvVrHwWZ31X+XkdOfvKZ/qpvxv3esfcAACiBAAgSgAAogQAIEoAAKIEACBKAACiBAAgSgAAogQAIEoAAKL+GZFxrykWAPzUfjKSGwBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAQJQAAEQJAECUAABECQBAlAAARAkAAACUuAEARAkAQJQAAET9CQAA///CM1JN+cwiswAAAABJRU5ErkJggg=="
+const ProbePNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAgAAAACgCAIAAAD1mUNqAAAC+ElEQVR4nOzd0WrbMBhA4Xnk/V/ZuxvZEMHEUS3nfN/VBnUrbDcHwY/6+xcASQIAECUAAFECABD1eP7Pvu/XrQSA6bZt+/tvOwCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAIgSAIAoAQCIEgCAKAEAiBIAgCgBAACiBAAgSgAAogQAIOpPAAAA//9JjWwzyurglu9gAAAABJRU5ErkJggg=="
 
 // probePNG 当前使用的探测图
 var probePNG = ProbePNGBase64
@@ -185,9 +185,23 @@ func TestMultimodal(adapter ProviderAdapter) *MultimodalTestResult {
 		}
 	}
 
+	// 启发式：chat() 调用成功（模型接受了图片，无协议错误），但 OCR/OK 探测失败
+	//   - 这种情况下模型是支持多模态的（能接收图片），但探测图无法通过
+	//   - 典型场景：M3 内容审核拒收、OCR 失败、prompt 理解差异
+	//   - 判定为「true」而非「null」，避免误报不支持
+	if text != "" {
+		t := true
+		return &MultimodalTestResult{
+			Supported:   &t,
+			Message:     "模型接受图片但 OCR 未识别「MULTIMODAL」（" + ms2str(latencyMs) + "）：「" + truncate(text, 60) + "」（视作支持，可右键手动调整）",
+			FullMessage: text,
+			LatencyMs:   latencyMs,
+		}
+	}
+
 	return &MultimodalTestResult{
 		Supported:   nil,
-		Message:     "响应不含 OK/MULTIMODAL：模型说「" + truncate(text, 60) + "」（" + ms2str(latencyMs) + "；请右键手动标注）",
+		Message:     "响应为空（" + ms2str(latencyMs) + "；请右键手动标注）",
 		FullMessage: text,
 		LatencyMs:   latencyMs,
 	}

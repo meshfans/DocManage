@@ -84,8 +84,9 @@ type TestResult struct {
 }
 
 // MultimodalResult 多模态检测结果
+//   - Supported: nil=未检测/不确定, true=支持, false=不支持
 type MultimodalResult struct {
-	Supported bool   `json:"supported"`
+	Supported *bool  `json:"supported"`
 	LatencyMs int    `json:"latency_ms"`
 	Message   string `json:"message,omitempty"`
 }
