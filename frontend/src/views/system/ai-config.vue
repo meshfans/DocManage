@@ -124,6 +124,7 @@ watch(
     const preset = PRESET_PROVIDERS.find((p) => p.value === val);
     if (!preset) return;
     if (preset.defaultBase) form.apiBase = preset.defaultBase;
+    form.apiPath = preset.defaultPath ?? "";
     const rec = preset.models.find((m) => m.recommended);
     if (rec) {
       form.modelKey = rec.key;
@@ -142,6 +143,13 @@ function openCreate() {
   showKey.value = false;
   activeTab.value = "preset";
   dialogVisible.value = true;
+
+  // 预填 deepseek 默认值（如果 initialForm 已有默认值）
+  const preset = PRESET_PROVIDERS.find((p) => p.value === form.provider);
+  if (preset) {
+    if (!form.apiBase) form.apiBase = preset.defaultBase;
+    if (!form.apiPath) form.apiPath = preset.defaultPath;
+  }
 }
 
 async function openEdit(row: AIConfigItem) {
@@ -233,18 +241,32 @@ async function handleSave() {
     if (form.apiKey.trim()) payload.api_key = form.apiKey.trim();
     if (editingId.value) payload.id = editingId.value;
 
+    // 从 preset 模型元数据获取 multimodal 字段
+    if (activeTab.value !== "custom" && form.modelKey.trim()) {
+      const preset = PRESET_PROVIDERS.find((p) => p.value === form.provider);
+      const model = preset?.models.find((m) => m.key === form.modelKey.trim());
+      if (model && model.multimodal !== undefined) {
+        payload.multimodal = model.multimodal;
+      }
+    }
+
     const saved = dialogMode.value === "create"
       ? await createAIConfig(payload)
       : await updateAIConfig(editingId.value!, payload);
 
     ElMessage.success(dialogMode.value === "create" ? "创建成功" : "更新成功");
     dialogVisible.value = false;
-    await loadList();
 
     const savedId = (saved as any).data?.id ?? editingId.value;
+    await loadList();
+
+    // 从列表中找到刚保存的配置并自动测试
     const savedRow = list.value.find((r) => r.id === savedId);
     if (savedRow) {
       await handleTest(savedRow);
+    } else if (savedId) {
+      // 兜底：如果列表还没更新，直接用 ID 测试
+      await handleTestById(savedId);
     }
   } catch (err) {
     ElMessage.error(`保存失败：${(err as Error).message}`);
@@ -294,6 +316,22 @@ async function handleTest(row: AIConfigItem) {
   }
 }
 
+// 通过 ID 直接测试（兜底方案）
+async function handleTestById(id: number) {
+  if (testingIds.value.has(id)) return;
+  testingIds.value.add(id);
+  try {
+    const res = await testAIConfig(id);
+    ElMessage.success(`${res.message} (${res.latencyMs}ms)`);
+    await loadList();
+  } catch (err) {
+    await loadList();
+    ElMessage.error(`测试失败：${(err as Error).message}`);
+  } finally {
+    testingIds.value.delete(id);
+  }
+}
+
 async function handleToggleMultimodal(row: AIConfigItem, supported: 0 | 1) {
   try {
     await toggleAIMultimodal(row.id, supported);
@@ -336,8 +374,8 @@ function getTestFeedbackTag(row: AIConfigItem) {
 
 function formatTestAt(at: number | null | undefined): string {
   if (!at) return "";
-  // 兼容旧数据：若时间戳看起来像秒（< 1e12），转换为毫秒
-  const ts = at < 1_000_000_000_000 ? at * 1000 : at;
+  // 时间戳是秒，转换为毫秒
+  const ts = at * 1000;
   const diff = Date.now() - ts;
   if (diff < 60_000) return "刚刚";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
@@ -350,6 +388,8 @@ function onPresetModelChange(key: string) {
   if (!preset) return;
   const m = preset.models.find((mm) => mm.key === key);
   if (m) form.protocol = m.protocol;
+  // 每次切换模型时同步 apiPath（以防 provider 层面默认值被覆盖）
+  if (preset.defaultPath) form.apiPath = preset.defaultPath;
 }
 
 function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<string, unknown> {
@@ -367,7 +407,7 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
 </script>
 
 <template>
-  <div>
+  <div class="ai-config-content">
     <el-card v-loading="loading" shadow="never">
       <template #header>
         <div class="flex justify-between items-center">
@@ -421,7 +461,7 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
 
         <el-table-column label="多模态" width="120" align="center">
           <template #default="{ row }">
-            <el-tooltip v-if="getMultimodalTag(row as AIConfigItem)" :content="row.multimodal_checked_at ? `检测于 ${new Date(row.multimodal_checked_at).toLocaleString('zh-CN')}` : ''">
+            <el-tooltip v-if="getMultimodalTag(row as AIConfigItem)" :content="row.multimodal_checked_at ? `检测于 ${new Date(row.multimodal_checked_at * 1000).toLocaleString('zh-CN')}` : ''">
               <el-tag :type="getMultimodalTag(row as AIConfigItem)!.type" :effect="getMultimodalTag(row as AIConfigItem)!.effect" size="small">
                 <el-icon class="mr-1" size="12">
                   <component :is="(row as AIConfigItem).multimodal_supported === 1 ? CircleCheck : CircleClose" />
@@ -648,6 +688,10 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
 </template>
 
 <style scoped>
+.ai-config-content {
+  padding: 20px;
+}
+
 .model-name {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 12px;

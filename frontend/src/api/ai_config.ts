@@ -60,6 +60,7 @@ export interface AIConfigPayload {
   default_params?: Record<string, unknown>;
   extra?: Record<string, unknown>;
   is_default?: boolean;
+  multimodal?: boolean; // 是否支持图片输入（创建/更新时可选）
 }
 
 export interface AIConfigListResp {

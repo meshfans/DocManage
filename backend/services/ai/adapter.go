@@ -1,42 +1,20 @@
 package ai
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
+	"context"
 	"time"
+
+	"doc/pkg/llmclient"
 )
 
 // Protocol 协议类型
 type Protocol string
 
 const (
-	ProtocolOpenAIChat     Protocol = "openai_chat"
-	ProtocolOpenAIResponses Protocol = "openai_responses"
-	ProtocolAnthropic     Protocol = "anthropic_messages"
-	ProtocolGoogle        Protocol = "google_generative"
-	ProtocolOllama        Protocol = "ollama_chat"
-)
-
-// Provider 服务商类型
-type Provider string
-
-const (
-	ProviderOpenAI     Provider = "openai"
-	ProviderAnthropic  Provider = "anthropic"
-	ProviderGoogle     Provider = "google"
-	ProviderOllama     Provider = "ollama"
-	ProviderDeepSeek   Provider = "deepseek"
-	ProviderZhipu      Provider = "zhipu"
-	ProviderQwen       Provider = "qwen"
-	ProviderKimi       Provider = "kimi"
-	ProviderDoubao     Provider = "doubao"
-	ProviderMiniMax    Provider = "minimax"
-	ProviderSiliconFlow Provider = "siliconflow"
-	ProviderCustom     Provider = "custom"
+	ProtocolOpenAIChat Protocol = "openai_chat"
+	ProtocolAnthropic  Protocol = "anthropic_messages"
+	ProtocolGoogle     Protocol = "google_generative"
+	ProtocolOllama     Protocol = "ollama_chat"
 )
 
 // ChatMessage 聊天消息
@@ -53,21 +31,21 @@ type ChatImage struct {
 
 // ChatRequest 聊天请求
 type ChatRequest struct {
-	Messages   []ChatMessage `json:"messages"`
+	Messages    []ChatMessage `json:"messages"`
 	Images     []ChatImage   `json:"images,omitempty"`
 	Temperature *float64     `json:"temperature,omitempty"`
 	MaxTokens  *int         `json:"max_tokens,omitempty"`
 	TopP       *float64     `json:"top_p,omitempty"`
-	Stream     bool         `json:"stream,omitempty"`
+	Stream     bool          `json:"stream,omitempty"`
 	OnChunk    func(delta, full string) `json:"-"`
-	TimeoutMs  int          `json:"timeout_ms,omitempty"`
+	TimeoutMs  int           `json:"timeout_ms,omitempty"`
 	Signal     *chan struct{} `json:"-"`
 }
 
 // ChatResponse 聊天响应
 type ChatResponse struct {
-	Text   string `json:"text"`
-	Usage  *Usage `json:"usage,omitempty"`
+	Text  string `json:"text"`
+	Usage *Usage `json:"usage,omitempty"`
 }
 
 // Usage Token 使用量
@@ -78,26 +56,25 @@ type Usage struct {
 
 // TestResult 连接测试结果
 type TestResult struct {
-	OK       bool    `json:"ok"`
+	OK        bool   `json:"ok"`
 	LatencyMs int    `json:"latency_ms"`
-	Message  string  `json:"message,omitempty"`
+	Message   string `json:"message,omitempty"`
 }
 
 // MultimodalResult 多模态检测结果
-//   - Supported: nil=未检测/不确定, true=支持, false=不支持
 type MultimodalResult struct {
-	Supported *bool  `json:"supported"`
-	LatencyMs int    `json:"latencyMs"`
+	Supported *bool `json:"supported"`
+	LatencyMs int   `json:"latencyMs"`
 	Message   string `json:"message,omitempty"`
 }
 
 // FullTestResult 完整测试结果（含多模态）
 type FullTestResult struct {
-	OK        bool               `json:"ok"`
-	LatencyMs int                `json:"latencyMs"`
-	Message   string             `json:"message"`
-	Provider  string             `json:"provider"`
-	Model     string             `json:"model"`
+	OK         bool              `json:"ok"`
+	LatencyMs  int              `json:"latencyMs"`
+	Message    string           `json:"message"`
+	Provider   string           `json:"provider,omitempty"`
+	Model      string           `json:"model,omitempty"`
 	Multimodal *MultimodalResult `json:"multimodal,omitempty"`
 }
 
@@ -109,133 +86,152 @@ type Config struct {
 	ModelName     string
 	APIKey        string
 	APIBase       string
+	APIPath       string // API 路径，如 /chat/completions
 	ProxyURL      string
 	DefaultParams map[string]interface{}
 }
 
-// ProviderAdapter AI 协议适配器接口
+// ProviderAdapter AI Provider 适配器接口
 type ProviderAdapter interface {
 	TestConnection() (*TestResult, error)
 	Chat(req *ChatRequest) (*ChatResponse, error)
 }
 
-// buildAdapter 根据协议选择适配器
+// BuildAdapter 根据协议类型构建适配器（使用统一 llmclient）
 func BuildAdapter(cfg *Config) ProviderAdapter {
-	proto := Protocol(cfg.Protocol)
+	// 检测 Provider
+	provider := llmclient.Provider(cfg.Provider)
+	if provider == "" {
+		provider = llmclient.DetectProviderByBaseURL(cfg.APIBase)
+	}
 
-	switch proto {
-	case ProtocolAnthropic:
-		return newAnthropicAdapter(cfg)
-	case ProtocolGoogle:
-		return newGoogleAdapter(cfg)
-	case ProtocolOllama:
-		return newOllamaAdapter(cfg)
-	case ProtocolOpenAIChat, ProtocolOpenAIResponses:
-		return newOpenAICompatAdapter(cfg)
-	default:
-		// 默认走 OpenAI 兼容
-		return newOpenAICompatAdapter(cfg)
+	llmCfg := &llmclient.Config{
+		Provider:  provider,
+		Protocol:  llmclient.Protocol(cfg.Protocol),
+		ModelName: cfg.ModelName,
+		APIKey:    cfg.APIKey,
+		APIBase:   cfg.APIBase,
+		APIPath:   cfg.APIPath,
+		ProxyURL:  cfg.ProxyURL,
+		TimeoutMs: 60000,
+	}
+
+	return &LLMClientAdapter{
+		client:    llmclient.NewClient(llmCfg),
+		provider:  string(provider),
+		modelName: cfg.ModelName,
 	}
 }
 
-// sendJSON 发送 JSON 请求
-func sendJSON(endpoint string, method string, headers map[string]string, body interface{}, timeoutMs int) ([]byte, int, error) {
-	if timeoutMs <= 0 {
-		timeoutMs = 180000 // 默认 3 分钟
-	}
-
-	client := &http.Client{
-		Timeout: time.Duration(timeoutMs) * time.Millisecond,
-	}
-
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("JSON 序列化失败: %w", err)
-	}
-
-	req, err := http.NewRequest(method, endpoint, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, 0, fmt.Errorf("创建请求失败: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return bodyBytes, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return bodyBytes, resp.StatusCode, nil
+// LLMClientAdapter 基于 llmclient 的适配器
+type LLMClientAdapter struct {
+	client    llmclient.Client
+	provider  string
+	modelName string
 }
 
-// formatErrorPayload 解析错误响应
-func formatErrorPayload(body []byte, fallback string) string {
-	var errResp struct {
-		Error struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-			Code    string `json:"code"`
-		} `json:"error"`
-		ErrorMsg string `json:"error_message"`
-		Message  string `json:"message"`
-	}
-
-	if err := json.Unmarshal(body, &errResp); err != nil {
-		return fallback
-	}
-
-	if errResp.Error.Message != "" {
-		return errResp.Error.Message
-	}
-	if errResp.ErrorMsg != "" {
-		return errResp.ErrorMsg
-	}
-	if errResp.Message != "" {
-		return errResp.Message
-	}
-	return fallback
+// Provider 返回 provider 名称
+func (a *LLMClientAdapter) Provider() string {
+	return a.provider
 }
 
-// stripThinking 剥离推理模型的思考内容
-func stripThinking(text string) string {
-	// 移除 <think>...</think> 块
-	for {
-		start := strings.Index(text, "<think>")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(text, "</think>")
-		if end == -1 {
-			break
-		}
-		text = text[:start] + text[end+len("</think>"):]
+// ModelName 返回模型名称
+func (a *LLMClientAdapter) ModelName() string {
+	return a.modelName
+}
+
+// TestConnection 测试连接
+func (a *LLMClientAdapter) TestConnection() (*TestResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := a.client.TestConnection(ctx)
+	if err != nil {
+		return &TestResult{
+			OK:        false,
+			LatencyMs: 0,
+			Message:   err.Error(),
+		}, nil
 	}
 
-	// 移除 <think>...</think> 块
-	for {
-		start := strings.Index(text, "<think>")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(text, "</think>")
-		if end == -1 {
-			break
-		}
-		text = text[:start] + text[end+len("</think>"):]
+	return &TestResult{
+		OK:        result.OK,
+		LatencyMs: result.LatencyMs,
+		Message:   result.Message,
+	}, nil
+}
+
+// Chat 聊天
+func (a *LLMClientAdapter) Chat(req *ChatRequest) (*ChatResponse, error) {
+	ctx := context.Background()
+	if req.TimeoutMs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.TimeoutMs)*time.Millisecond)
+		defer cancel()
 	}
 
-	return strings.TrimSpace(text)
+	// 转换请求
+	messages := make([]llmclient.Message, 0)
+	for _, m := range req.Messages {
+		messages = append(messages, llmclient.Message{
+			Role:    m.Role,
+			Content: m.Content,
+		})
+	}
+
+	images := make([]llmclient.Image, 0)
+	for _, img := range req.Images {
+		images = append(images, llmclient.Image{
+			Base64: img.Base64,
+			Mime:   img.Mime,
+		})
+	}
+
+	llmReq := &llmclient.ChatRequest{
+		Messages: messages,
+		Images:   images,
+	}
+
+	if req.Temperature != nil {
+		llmReq.Temperature = *req.Temperature
+	}
+	if req.MaxTokens != nil {
+		llmReq.MaxTokens = *req.MaxTokens
+	}
+	if req.TopP != nil {
+		llmReq.TopP = *req.TopP
+	}
+
+	resp, err := a.client.Chat(ctx, llmReq)
+	if err != nil {
+		return nil, err
+	}
+
+	var usage *Usage
+	if resp.Usage != nil {
+		usage = &Usage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+		}
+	}
+
+	return &ChatResponse{
+		Text:  resp.Text,
+		Usage: usage,
+	}, nil
+}
+
+// ptrInt 创建 int 指针
+func ptrInt(v int) *int {
+	return &v
+}
+
+// ptrFloat64 创建 float64 指针
+func ptrFloat64(v float64) *float64 {
+	return &v
+}
+
+// sleepShort 短暂等待
+func sleepShort(ms int) {
+	time.Sleep(time.Duration(ms) * time.Millisecond)
 }

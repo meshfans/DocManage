@@ -122,7 +122,8 @@ const qwenProvider: PresetProvider = {
       outputTokens: 65_536,
       badge: "旗舰",
       recommended: true,
-      desc: "Qwen3.7-Max 旗舰"
+      desc: "Qwen3.7-Max 旗舰",
+      multimodal: true
     },
     {
       key: "qwen3.7-plus",
@@ -131,7 +132,8 @@ const qwenProvider: PresetProvider = {
       inputTokens: 1_000_000,
       outputTokens: 65_536,
       badge: "主力",
-      desc: "Qwen3.7 Plus"
+      desc: "Qwen3.7 Plus",
+      multimodal: true
     },
     {
       key: "qwen3.6-flash",
@@ -140,7 +142,8 @@ const qwenProvider: PresetProvider = {
       inputTokens: 1_000_000,
       outputTokens: 32_768,
       badge: "极速",
-      desc: "极速低价"
+      desc: "极速低价",
+      multimodal: true
     }
   ]
 };
@@ -161,7 +164,8 @@ const kimiProvider: PresetProvider = {
       outputTokens: 262_144,
       badge: "旗舰",
       recommended: true,
-      desc: "Kimi K2.6 旗舰"
+      desc: "Kimi K2.6 旗舰",
+      multimodal: true
     },
     {
       key: "kimi-k2.5",
@@ -170,7 +174,8 @@ const kimiProvider: PresetProvider = {
       inputTokens: 262_144,
       outputTokens: 262_144,
       badge: "主力",
-      desc: "Kimi K2.5 稳定"
+      desc: "Kimi K2.5 稳定",
+      multimodal: true
     }
   ]
 };
@@ -191,7 +196,8 @@ const doubaoProvider: PresetProvider = {
       outputTokens: 16_000,
       badge: "旗舰",
       recommended: true,
-      desc: "豆包 Seed 2.1 Pro"
+      desc: "豆包 Seed 2.1 Pro",
+      multimodal: true
     },
     {
       key: "doubao-seed-2-0-lite",
@@ -200,7 +206,8 @@ const doubaoProvider: PresetProvider = {
       inputTokens: 256_000,
       outputTokens: 16_000,
       badge: "免费",
-      desc: "¥0.0008/千 token"
+      desc: "¥0.0008/千 token",
+      multimodal: true
     }
   ]
 };
@@ -253,7 +260,8 @@ const siliconflowProvider: PresetProvider = {
       outputTokens: 8_000,
       badge: "免费",
       recommended: true,
-      desc: "开源 SOTA MoE"
+      desc: "开源 SOTA MoE",
+      multimodal: false
     },
     {
       key: "deepseek-ai/DeepSeek-V4",
@@ -262,7 +270,8 @@ const siliconflowProvider: PresetProvider = {
       inputTokens: 128_000,
       outputTokens: 32_000,
       badge: "主力",
-      desc: "V4 开源版"
+      desc: "V4 开源版",
+      multimodal: true
     }
   ]
 };
@@ -379,7 +388,8 @@ const ollamaProvider: PresetProvider = {
       outputTokens: 8_000,
       badge: "主力",
       recommended: true,
-      desc: "Qwen3 32B 多语言"
+      desc: "Qwen3 32B 多语言",
+      multimodal: false
     },
     {
       key: "qwen3-coder:30b",
@@ -388,7 +398,8 @@ const ollamaProvider: PresetProvider = {
       inputTokens: 262_000,
       outputTokens: 32_000,
       badge: "推理",
-      desc: "Qwen3 Coder 编程"
+      desc: "Qwen3 Coder 编程",
+      multimodal: false
     }
   ]
 };

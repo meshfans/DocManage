@@ -25,9 +25,13 @@ func SeedAIConfigs() error {
 		Protocol    string
 		ModelName   string
 		APIBase     string
+		APIPath     string
 		DefaultJSON string
 		ExtraJSON   string
 		IsDefault   int
+		Multimodal  int
+		MMCheckedAt int64
+		MMSrc       string
 	}{
 		{
 			Name:      "模小范 · meshfans-v1（官方 OpenAI 兼容）",
@@ -35,6 +39,7 @@ func SeedAIConfigs() error {
 			Protocol:  "openai_chat",
 			ModelName: "meshfans-v1",
 			APIBase:   "https://aiv1.meshfans.com/v1",
+			APIPath:   "/chat/completions",
 			DefaultJSON: mustMarshalJSON(map[string]interface{}{
 				"temperature": 0.7,
 				"max_tokens":  2048,
@@ -46,7 +51,10 @@ func SeedAIConfigs() error {
 				"signupUrl": "https://aiv1.meshfans.com/",
 				"note":      "官方 OpenAI 兼容 API；向 meshfans 官方申请 API Key 填入即可使用。",
 			}),
-			IsDefault: 1,
+			IsDefault:   1,
+			Multimodal:  0,
+			MMCheckedAt: 0,
+			MMSrc:       "",
 		},
 		{
 			Name:      "智谱 · GLM-4.7-Flash（永久免费）",
@@ -54,6 +62,7 @@ func SeedAIConfigs() error {
 			Protocol:  "anthropic_messages",
 			ModelName: "glm-4.7-flash",
 			APIBase:   "https://open.bigmodel.cn/api/anthropic",
+			APIPath:   "/messages",
 			DefaultJSON: mustMarshalJSON(map[string]interface{}{
 				"temperature": 0.7,
 				"max_tokens":  2048,
@@ -65,7 +74,10 @@ func SeedAIConfigs() error {
 				"signupUrl": "https://bigmodel.cn/",
 				"note":      "注册智谱账号 → 控制台拿 API Key 填入；使用 Anthropic Messages 原生协议",
 			}),
-			IsDefault: 0,
+			IsDefault:   0,
+			Multimodal:  0,
+			MMCheckedAt: now,
+			MMSrc:       "preset",
 		},
 		{
 			Name:      "硅基流动 · Qwen2.5-7B-Instruct",
@@ -73,6 +85,7 @@ func SeedAIConfigs() error {
 			Protocol:  "openai_chat",
 			ModelName: "Qwen/Qwen2.5-7B-Instruct",
 			APIBase:   "https://api.siliconflow.cn/v1",
+			APIPath:   "/chat/completions",
 			DefaultJSON: mustMarshalJSON(map[string]interface{}{
 				"temperature": 0.7,
 				"max_tokens":  2048,
@@ -84,7 +97,10 @@ func SeedAIConfigs() error {
 				"signupUrl": "https://siliconflow.cn/",
 				"note":      "注册送免费额度；适合大批量文本生成",
 			}),
-			IsDefault: 0,
+			IsDefault:   0,
+			Multimodal:  0,
+			MMCheckedAt: 0,
+			MMSrc:       "",
 		},
 		{
 			Name:      "Ollama · qwen3:1.7b（本地推理）",
@@ -92,6 +108,7 @@ func SeedAIConfigs() error {
 			Protocol:  "ollama_chat",
 			ModelName: "qwen3:1.7b",
 			APIBase:   "http://127.0.0.1:11434",
+			APIPath:   "/api/chat",
 			DefaultJSON: mustMarshalJSON(map[string]interface{}{
 				"temperature": 0.7,
 				"max_tokens":  2048,
@@ -102,17 +119,22 @@ func SeedAIConfigs() error {
 				"authFree": true,
 				"note":     "需先启动本地 Ollama 服务（ollama serve），再 `ollama pull qwen3:1.7b`",
 			}),
-			IsDefault: 0,
+			IsDefault:   0,
+			Multimodal:  0,
+			MMCheckedAt: now,
+			MMSrc:       "preset",
 		},
 	}
 
 	for _, s := range seeds {
 		_, err := DB.Exec(`
-			INSERT INTO ai_config (name, provider, protocol, model_name, api_key, api_base,
-			                      default_params, extra, is_default, status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, 1, ?, ?)
-		`, s.Name, s.Provider, s.Protocol, s.ModelName, s.APIBase,
-			s.DefaultJSON, s.ExtraJSON, s.IsDefault, now, now)
+			INSERT INTO ai_config (name, provider, protocol, model_name, api_key, api_base, api_path,
+			                      default_params, extra, is_default, status, created_at, updated_at,
+			                      multimodal_supported, multimodal_checked_at, multimodal_check_source)
+			VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+		`, s.Name, s.Provider, s.Protocol, s.ModelName, s.APIBase, s.APIPath,
+			s.DefaultJSON, s.ExtraJSON, s.IsDefault, now, now,
+			s.Multimodal, s.MMCheckedAt, s.MMSrc)
 		if err != nil {
 			return err
 		}

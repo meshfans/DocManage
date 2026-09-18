@@ -136,7 +136,7 @@
                   <el-dropdown-menu>
                     <!-- 2026-06-25 A.3 修复：系统预置 role 不可编辑（与 is_system=1 在后端对应） -->
                     <el-dropdown-item
-                      v-perms="'rbac:roles:upsert'"
+                      v-if="hasPerms('rbac:roles:upsert')"
                       :disabled="row.is_system"
                       command="edit"
                     >
@@ -146,7 +146,7 @@
                       权限测试
                     </el-dropdown-item>
                     <el-dropdown-item
-                      v-perms="'rbac:roles:delete'"
+                      v-if="hasPerms('rbac:roles:delete')"
                       :disabled="row.is_system"
                       command="delete"
                       divided
@@ -373,6 +373,7 @@ import {
 import type { Role, Permission } from "@/api/rbac";
 import { getDepartmentTree } from "@/api/department";
 import type { DepartmentTree } from "@/api/department";
+import { hasPerms } from "@/utils/auth";
 
 defineOptions({ name: "RoleManagement" });
 

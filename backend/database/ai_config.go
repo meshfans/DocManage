@@ -283,7 +283,6 @@ func SetDefaultAIConfig(id int64) error {
 // SetMultimodalSupported 设置多模态支持状态
 //   - multimodal_checked_at 用毫秒时间戳（与前端 Date.now() 对齐）
 func SetMultimodalSupported(id int64, supported int, source string) error {
-	nowMs := time.Now().UnixMilli()
 	now := time.Now().Unix()
 	_, err := DB.Exec(`
 		UPDATE ai_config SET
@@ -292,7 +291,7 @@ func SetMultimodalSupported(id int64, supported int, source string) error {
 			multimodal_check_source = ?,
 			updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
-	`, supported, nowMs, source, now, id)
+	`, supported, now, source, now, id)
 	return err
 }
 
@@ -311,14 +310,12 @@ func ClearMultimodalCheck(id int64) error {
 }
 
 // SetTestResult 设置测试结果
-//   - test_result_at 用毫秒时间戳（与前端 Date.now() 对齐）
 func SetTestResult(id int64, result string) error {
-	nowMs := time.Now().UnixMilli()
 	now := time.Now().Unix()
 	_, err := DB.Exec(`
 		UPDATE ai_config SET test_result = ?, test_result_at = ?, updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
-	`, result, nowMs, now, id)
+	`, result, now, now, id)
 	return err
 }
 
@@ -346,6 +343,7 @@ type AIConfigPayload struct {
 	DefaultParams  map[string]interface{} `json:"default_params,omitempty"`
 	Extra          map[string]interface{} `json:"extra,omitempty"`
 	IsDefault     bool                   `json:"is_default"`
+	Multimodal   *bool                  `json:"multimodal,omitempty"` // 是否支持图片输入（true/false）
 }
 
 // ToAIConfig 将 payload 转换为 AIConfig
@@ -360,8 +358,17 @@ func (p *AIConfigPayload) ToAIConfig() (*AIConfig, error) {
 	}
 
 	extraJSON := ""
-	if len(p.Extra) > 0 {
-		data, err := json.Marshal(p.Extra)
+	// 合并 extra 和 multimodal
+	extra := p.Extra
+	if extra == nil {
+		extra = make(map[string]interface{})
+	}
+	// 如果用户指定了 multimodal，加入 extra
+	if p.Multimodal != nil {
+		extra["multimodal"] = *p.Multimodal
+	}
+	if len(extra) > 0 {
+		data, err := json.Marshal(extra)
 		if err != nil {
 			return nil, err
 		}

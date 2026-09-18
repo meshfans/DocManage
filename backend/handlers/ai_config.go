@@ -129,7 +129,7 @@ func (h *AIConfigHandler) CreateAIConfig(c *gin.Context) {
 		database.SetDefaultAIConfig(id)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id})
+	utils.Success(c, gin.H{"id": id})
 }
 
 // UpdateAIConfig 更新配置
@@ -176,7 +176,7 @@ func (h *AIConfigHandler) UpdateAIConfig(c *gin.Context) {
 		database.SetDefaultAIConfig(id)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id})
+	utils.Success(c, gin.H{"id": id})
 }
 
 // UpdateAIConfigKey 仅更新 API Key
@@ -206,7 +206,7 @@ func (h *AIConfigHandler) UpdateAIConfigKey(c *gin.Context) {
 	database.ClearTestResult(id)
 	database.ClearMultimodalCheck(id)
 
-	c.JSON(http.StatusOK, gin.H{"id": id})
+	utils.Success(c, gin.H{"id": id})
 }
 
 // DeleteAIConfig 删除配置
@@ -224,7 +224,7 @@ func (h *AIConfigHandler) DeleteAIConfig(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id})
+	utils.Success(c, gin.H{"id": id})
 }
 
 // SetDefaultAIConfig 设置默认配置
@@ -242,7 +242,7 @@ func (h *AIConfigHandler) SetDefaultAIConfig(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id})
+	utils.Success(c, gin.H{"id": id})
 }
 
 // TestAIConfig 测试配置连接
@@ -268,6 +268,7 @@ func (h *AIConfigHandler) TestAIConfig(c *gin.Context) {
 		ModelName: cfg.ModelName,
 		APIKey:    cfg.APIKey,
 		APIBase:   cfg.APIBase,
+		APIPath:   cfg.APIPath,
 		ProxyURL:  cfg.ProxyURL,
 	}
 
@@ -309,7 +310,7 @@ func (h *AIConfigHandler) TestAIConfig(c *gin.Context) {
 		testResult.Multimodal = &ai.MultimodalResult{
 			Supported: mmResult.Supported, // 直接传递三态（nil=不确定）
 			LatencyMs: mmResult.LatencyMs,
-			Message:   mmResult.FullMessage,
+			Message:   mmResult.Message,
 		}
 		// 三态语义：nil = 检测不确定，不写 DB
 		if mmResult.Supported != nil {
@@ -333,6 +334,7 @@ func (h *AIConfigHandler) TestAIConfigInline(c *gin.Context) {
 		ModelName   string                 `json:"model_name" binding:"required"`
 		APIKey      string                 `json:"api_key"`
 		APIBase     string                 `json:"api_base" binding:"required"`
+		APIPath     string                 `json:"api_path"`
 		DefaultParams map[string]interface{} `json:"default_params"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -346,6 +348,7 @@ func (h *AIConfigHandler) TestAIConfigInline(c *gin.Context) {
 		ModelName:   payload.ModelName,
 		APIKey:      payload.APIKey,
 		APIBase:     payload.APIBase,
+		APIPath:     payload.APIPath,
 		DefaultParams: payload.DefaultParams,
 	}
 
