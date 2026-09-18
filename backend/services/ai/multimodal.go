@@ -28,31 +28,34 @@ var minimaxMultimodalModels = map[string]bool{
 }
 
 // KnownMultimodalModels 已知支持多模态的模型
+// 注意：key 必须与 frontend/src/types/ai-presets.ts 中的 model.key 一致
 var knownMultimodalModels = map[string]bool{
 	// DeepSeek
-	"deepseek-v4-pro":   true,
-	"deepseek-v4-flash": true,
+	"deepseek-v4-pro":    true,
+	"deepseek-v4-flash":  true,
 	// 智谱
 	"glm-5": true, // GLM-5 支持图片
 	// Qwen
-	"qwen3.7-max":  true,
-	"qwen3.7-plus": true,
+	"qwen3.7-max":   true,
+	"qwen3.7-plus":  true,
 	"qwen3.6-flash": true,
 	// Kimi
 	"kimi-k2.6": true,
 	"kimi-k2.5": true,
-	// 豆包
-	"doubao-seed-2-1-pro":  true,
-	"doubao-seed-2-0-lite": true,
+	// 豆包（key 与 ai-presets.ts 一致）
+	"doubao-seed-2-1-pro-260628": true,
+	"doubao-seed-2-0-lite":       true,
 	// OpenAI
 	"gpt-5.5": true,
 	"gpt-4o":  true,
 	// Claude
 	"claude-opus-4-8": true,
-	"claude-sonnet-5": true,
+	"claude-sonnet-5":  true,
 	// Gemini
 	"gemini-2.5-pro":   true,
 	"gemini-2.5-flash": true,
+	// 硅基流动
+	"deepseek-ai/DeepSeek-V4": true, // DeepSeek V4 支持 vision
 }
 
 // KnownNoVisionModels 不支持多模态的模型前缀

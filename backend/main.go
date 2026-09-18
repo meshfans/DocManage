@@ -10,7 +10,7 @@ import (
 	"doc/handlers"
 	"doc/middleware"
 	"doc/server"
-	"doc/services"
+	"doc/services" // 触发 LLM 模块注册
 	"doc/utils"
 )
 

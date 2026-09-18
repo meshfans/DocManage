@@ -18,39 +18,39 @@ const lastUsage = ref<{ prompt_tokens: number; completion_tokens: number; total_
 // 快捷功能（带 context）
 const quickActions = [
   {
-    label: "总结通话",
+    label: "内容摘要",
     icon: ChatLineSquare,
-    template: "call_summary",
-    context: { scene: "通话" },
-    placeholder: "粘贴通话记录内容，我来帮你生成结构化摘要..."
+    template: "summarizer",
+    context: {},
+    placeholder: "粘贴需要摘要的内容，我来帮你提炼关键信息..."
   },
   {
-    label: "总结聊天",
+    label: "文本分析",
     icon: ChatRound,
-    template: "chat_summary",
-    context: { scene: "聊天" },
-    placeholder: "粘贴聊天记录内容，我来帮你生成结构化摘要..."
+    template: "analyzer",
+    context: {},
+    placeholder: "描述需要分析的内容，我来帮你深入分析..."
   },
   {
-    label: "写跟进",
+    label: "内容生成",
     icon: Message,
-    template: "followup_message",
+    template: "content_generator",
     context: {},
-    placeholder: "描述客户情况和跟进目的，我来帮你写跟进消息..."
+    placeholder: "描述内容需求，我来帮你生成内容..."
   },
   {
-    label: "写邮件",
-    icon: Promotion,
-    template: "business_email",
-    context: {},
-    placeholder: "描述邮件目的和背景，我来帮你起草商务邮件..."
-  },
-  {
-    label: "拜访纪要",
+    label: "大纲生成",
     icon: Document,
-    template: "visit_report",
+    template: "outline_generator",
     context: {},
-    placeholder: "粘贴拜访记录内容，我来帮你生成结构化纪要..."
+    placeholder: "描述主题，我来帮你生成详细大纲..."
+  },
+  {
+    label: "文字润色",
+    icon: Promotion,
+    template: "polisher",
+    context: {},
+    placeholder: "粘贴需要润色的文本，我来帮你优化表达..."
   },
 ];
 
