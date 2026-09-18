@@ -65,9 +65,9 @@ func (a *AnthropicAdapter) buildAnthropicBody(req *ChatRequest) map[string]inter
 				contentBlocks = append(contentBlocks, map[string]interface{}{
 					"type": "image",
 					"source": map[string]interface{}{
-						"type":      "base64",
+						"type":       "base64",
 						"media_type": img.Mime,
-						"data":      img.Base64,
+						"data":       img.Base64,
 					},
 				})
 			}
