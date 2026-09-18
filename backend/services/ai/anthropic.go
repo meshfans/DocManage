@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-// isMiniMax 检测是否为 MiniMax 网关（特殊图片格式）
-func isMiniMax(apiBase string) bool {
-	return strings.Contains(apiBase, "minimaxi.com")
-}
-
 // AnthropicAdapter Anthropic Messages 协议适配器
 type AnthropicAdapter struct {
 	cfg      *Config
@@ -67,28 +62,17 @@ func (a *AnthropicAdapter) buildAnthropicBody(req *ChatRequest) map[string]inter
 				})
 			}
 			for _, img := range req.Images {
-				// MiniMax 网关特殊：把 source.data 当作 data URL 解析
-				//   - 标准 Anthropic 协议：data = 纯 base64
-				//   - MiniMax 兼容网关：data = "data:<mime>;base64,<base64>" data URL
-				//   - 不加前缀会被 MiniMax 报 "unexpected EOF"
-				if isMiniMax(a.cfg.APIBase) {
-					contentBlocks = append(contentBlocks, map[string]interface{}{
-						"type": "image",
-						"source": map[string]interface{}{
-							"type": "url",
-							"url": fmt.Sprintf("data:%s;base64,%s", img.Mime, img.Base64),
-						},
-					})
-				} else {
-					contentBlocks = append(contentBlocks, map[string]interface{}{
-						"type": "image",
-						"source": map[string]interface{}{
-							"type":       "base64",
-							"media_type": img.Mime,
-							"data":       img.Base64,
-						},
-					})
-				}
+				// 统一使用标准 Anthropic 格式（纯 base64）
+				//   - v1.8.11+ Python PIL 测试验证：纯 base64 返回 200 OK
+				//   - data: URL 前缀会返回 400 illegal base64
+				contentBlocks = append(contentBlocks, map[string]interface{}{
+					"type": "image",
+					"source": map[string]interface{}{
+						"type":       "base64",
+						"media_type": img.Mime,
+						"data":       img.Base64,
+					},
+				})
 			}
 			msg["content"] = contentBlocks
 		}

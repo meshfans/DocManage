@@ -368,7 +368,7 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
       </template>
 
       <el-table :data="list" stripe>
-        <el-table-column label="名称" min-width="250">
+        <el-table-column label="名称" min-width="350">
           <template #default="{ row }">
             <span v-if="row.name" style="font-weight: 600">{{ row.name }}</span>
             <span v-else class="muted-placeholder">未命名</span>
@@ -464,10 +464,10 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
                       设为默认
                     </el-dropdown-item>
                     <el-dropdown-item command="mm-support" :disabled="(row as AIConfigItem).multimodal_supported === 1 && (row as AIConfigItem).multimodal_check_source === 'manual'">
-                      手动标记为支持多模态
+                      标记为多模态
                     </el-dropdown-item>
                     <el-dropdown-item command="mm-unsupport" :disabled="(row as AIConfigItem).multimodal_supported === 0 && (row as AIConfigItem).multimodal_check_source === 'manual'">
-                      手动标记为不支持
+                      标记为不支持
                     </el-dropdown-item>
                     <el-dropdown-item command="delete" divided style="color: var(--el-color-danger)">
                       删除

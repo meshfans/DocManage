@@ -87,17 +87,17 @@ type TestResult struct {
 //   - Supported: nil=未检测/不确定, true=支持, false=不支持
 type MultimodalResult struct {
 	Supported *bool  `json:"supported"`
-	LatencyMs int    `json:"latency_ms"`
+	LatencyMs int    `json:"latencyMs"`
 	Message   string `json:"message,omitempty"`
 }
 
 // FullTestResult 完整测试结果（含多模态）
 type FullTestResult struct {
-	OK        bool              `json:"ok"`
-	LatencyMs int               `json:"latency_ms"`
-	Message   string            `json:"message"`
-	Provider  string            `json:"provider"`
-	Model     string            `json:"model"`
+	OK        bool               `json:"ok"`
+	LatencyMs int                `json:"latencyMs"`
+	Message   string             `json:"message"`
+	Provider  string             `json:"provider"`
+	Model     string             `json:"model"`
 	Multimodal *MultimodalResult `json:"multimodal,omitempty"`
 }
 
