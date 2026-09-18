@@ -4,13 +4,12 @@
 //   - 调用方负责在 unmount 时 revoke 释放内存
 //
 // 特殊值：
-//   - "" / null / undefined → 返回默认头像 user.jpg (logo.png)
+//   - "" / null / undefined → 返回默认头像
 //   - "logo.png" → 返回本地 logo 资源
-//   - "uploads/avatar/{id}.{ext}" → 异步获取 blob 转 data URL（fallback）
+//   - "avatar/{id}.{ext}" 或 "uploads/avatar/{id}.{ext}" → 异步获取 blob URL
 //   - "http://..." / "https://..." / "/" 开头 → 原样返回
 
 import DefaultAvatar from "@/assets/logo.png";
-import LogoAsset from "@/assets/logo.png";
 import { fetchUserAvatar as apiFetchUserAvatar } from "@/api/user_extended";
 
 /**
@@ -31,31 +30,13 @@ export function resolveAvatarPath(avatar: string | null | undefined): string {
     return DefaultAvatar;
   }
   if (avatar === "logo.png") {
-    return LogoAsset;
+    return DefaultAvatar;
   }
   // 用户头像路径由 blob URL 处理，这里返回默认头像
   if (isUserAvatar(avatar)) {
     return DefaultAvatar;
   }
   return avatar;
-}
-
-/**
- * 异步获取用户头像的 data URL（fallback 模式）
- * @deprecated 推荐使用 fetchUserAvatarUrl（blob URL，性能更好）
- */
-export async function fetchAvatarDataUrl(
-  avatarPath: string,
-  userId: number
-): Promise<string | null> {
-  try {
-    const { url, revoke } = await apiFetchUserAvatar(userId);
-    // dataUrl 模式暂保持兼容：调用方应自己 revoke
-    setTimeout(revoke, 60_000);
-    return url;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -69,19 +50,4 @@ export async function fetchUserAvatarUrl(
   } catch {
     return null;
   }
-}
-
-/**
- * 清除头像缓存（保留接口兼容）
- */
-export function clearAvatarCache(): void {
-  // 现在头像 URL 不再缓存，调用方自己管理 revoke
-}
-
-/**
- * 同步解析 avatar 路径（兼容旧用法）
- * @deprecated 使用 resolveAvatarPath
- */
-export function resolveAvatar(avatar: string | null | undefined): string {
-  return resolveAvatarPath(avatar);
 }

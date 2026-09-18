@@ -5,8 +5,7 @@ import { emitter } from "@/utils/mitt";
 import {
   resolveAvatarPath,
   fetchUserAvatarUrl,
-  isUserAvatar,
-  clearAvatarCache
+  isUserAvatar
 } from "@/utils/avatar";
 import Logo from "@/assets/logo.png";
 import { getTopMenu } from "@/router/utils";
@@ -116,7 +115,6 @@ async function loadAvatar(): Promise<void> {
  * 强制刷新头像（供外部组件在上传成功后调用）
  */
 export function refreshNavAvatar() {
-  clearAvatarCache();
   disposeAvatarUrl();
   return loadAvatar();
 }
@@ -214,7 +212,6 @@ export function useNav() {
   }
 
   function logout() {
-    clearAvatarCache();
     disposeAvatarUrl();
     useUserStoreHook().logOut();
   }

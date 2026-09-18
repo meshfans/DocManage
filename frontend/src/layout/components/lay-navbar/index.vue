@@ -23,7 +23,7 @@ import ArrowLeftLine from "~icons/ri/arrow-left-line";
 import UserFill from "~icons/ri/user-fill";
 
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
-import { changePassword, getUserInfo } from "@/api/user";
+import { changePassword } from "@/api/user";
 import { uploadAvatar } from "@/api/user_extended";
 import { PASSWORD_MIN, PASSWORD_MAX, validatePasswordStrength } from "@/utils/password";
 import { isDocClient } from "@/utils/isDocClient";
