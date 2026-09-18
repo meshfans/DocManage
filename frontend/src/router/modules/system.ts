@@ -84,16 +84,6 @@ export default {
         permissions: [],
         adminOnly: true
       }
-    },
-    {
-      path: "/system/about",
-      name: "SystemAbout",
-      component: () => import("@/views/system/about.vue"),
-      meta: {
-        title: "关于我们",
-        icon: "ri/information-line",
-        rank: 99
-      }
     }
   ]
 } satisfies RouteConfigsTable;
