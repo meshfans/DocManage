@@ -103,6 +103,11 @@ func main() {
 		utils.Warn("调度器初始化失败: %v", err)
 	}
 
+	// 初始化 LLM 服务（必须在 database.InitDatabase 之后）
+	if err := services.InitLLMService(); err != nil {
+		utils.Warn("LLM 服务初始化失败: %v", err)
+	}
+
 	jwtUtils, err := utils.NewJWTUtilsFromConfig(
 		cfg.JWT.Secret,
 		cfg.JWT.AccessExpire,

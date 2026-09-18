@@ -31,6 +31,7 @@ import LaySetting from "./components/lay-setting/index.vue";
 import NavVertical from "./components/lay-sidebar/NavVertical.vue";
 import NavHorizontal from "./components/lay-sidebar/NavHorizontal.vue";
 import BackTopIcon from "@/assets/svg/back_top.svg?component";
+import Copilot from "@/views/copilot/Copilot.vue";
 
 const appWrapperRef = ref();
 const { isDark } = useDark();
@@ -246,6 +247,8 @@ const LayHeader = defineComponent({
     </div>
     <!-- 系统设置 -->
     <LaySetting />
+    <!-- AI Copilot 浮动助手 -->
+    <Copilot />
   </div>
 </template>
 

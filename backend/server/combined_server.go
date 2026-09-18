@@ -270,6 +270,13 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/ai-configs/:id/multimodal", aiConfigHandler.ToggleMultimodal)
 				protected.POST("/ai-configs/test", aiConfigHandler.TestAIConfigInline)
 				protected.GET("/ai-meta", aiConfigHandler.GetAIMeta)
+
+				// LLM Copilot（4 个端点）
+				llmHandler := handlers.NewLLMHandler()
+				protected.POST("/llm/chat", llmHandler.HandleChat)
+				protected.POST("/llm/stream", llmHandler.HandleStream)
+				protected.POST("/llm/module/:name/execute", llmHandler.HandleModuleExecute)
+				protected.POST("/llm/module/:name/stream", llmHandler.HandleModuleStream)
 			}
 		}
 	}
