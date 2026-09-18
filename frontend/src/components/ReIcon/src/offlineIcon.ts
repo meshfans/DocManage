@@ -45,7 +45,7 @@ import RiMailLine from "~icons/ri/mail-line?raw";
 import RiGlobalLine from "~icons/ri/global-line?raw";
 import RiWechat2Line from "~icons/ri/wechat-2-line?raw";
 // AI 配置页面图标
-import RiRobot2Line from "~icons/ri/robot-2-line?raw";
+import RiRobot from "~icons/ri/robot?raw";
 
 const icons = [
   // Element Plus Icon: https://github.com/element-plus/element-plus-icons
@@ -90,7 +90,7 @@ const icons = [
   ["ri/global-line", RiGlobalLine],               // 网站
   ["ri/wechat-2-line", RiWechat2Line],           // 微信
   // AI 配置页面图标
-  ["ri/robot-2-line", RiRobot2Line]             // AI 机器人
+  ["ri/robot", RiRobot]                        // AI 机器人
 ];
 
 // 本地菜单图标，后端在路由的 icon 中返回对应的图标字符串并且前端在此处使用 addIcon 添加即可渲染菜单图标
