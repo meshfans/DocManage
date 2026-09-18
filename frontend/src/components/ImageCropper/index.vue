@@ -1,31 +1,33 @@
 <script setup lang="ts">
+/**
+ * ImageCropper - 通用图片裁剪组件
+ * 支持任意宽高比、旋转、圆形裁剪等功能
+ */
 import { ref, onMounted, onBeforeUnmount, nextTick, computed } from "vue";
 import { ElMessage } from "element-plus";
 import { ZoomIn, ZoomOut, RefreshRight } from "@element-plus/icons-vue";
+import type { CropperOptions } from "./types";
+import { fullDefaultOptions } from "./types";
 
-const props = withDefaults(defineProps<{
-  /** 输出图片尺寸（宽高），默认 300 */
-  outputSize?: number;
-  /** 输出格式，默认 webp */
-  outputFormat?: "webp" | "jpeg" | "png";
-  /** 输出质量（0-1），仅 webp/jpeg 有效，默认 0.85 */
-  quality?: number;
-  /** 最大文件大小（字节），默认 5MB */
-  maxSize?: number;
-  /** 允许的文件类型，默认 image/* */
-  accept?: string;
-  /** 弹窗标题，默认"裁剪图片" */
-  title?: string;
-  /** 预览画布尺寸，默认 380 */
-  previewSize?: number;
-}>(), {
-  outputSize: 300,
+const props = withDefaults(defineProps<CropperOptions>(), {
+  outputWidth: 300,
+  outputHeight: 300,
   outputFormat: "webp",
   quality: 0.85,
   maxSize: 5 * 1024 * 1024,
   accept: "image/*",
+  aspectRatio: 0,
+  backgroundColor: '#1f2329',
+  maskColor: 'rgba(0, 0, 0, 0.5)',
+  borderColor: '#409eff',
+  guideColor: 'rgba(255, 255, 255, 0.4)',
   title: "裁剪图片",
-  previewSize: 380
+  previewSize: 380,
+  showGuideGrid: true,
+  roundedCrop: false,
+  minScale: 0.1,
+  maxScale: 5,
+  boundToCrop: true,
 });
 
 const emit = defineEmits<{
@@ -33,15 +35,15 @@ const emit = defineEmits<{
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
-
 const dialogVisible = ref(false);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const submitting = ref(false);
 
 // 状态
 const img = ref<HTMLImageElement | null>(null);
-const imgScale = ref(1); // 用户缩放系数
-const imgOffset = ref({ x: 0, y: 0 }); // 图片平移（相对裁剪框中心）
+const imgScale = ref(1);
+const imgOffset = ref({ x: 0, y: 0 });
+const imgRotation = ref(0);
 const dragging = ref(false);
 const lastPos = ref({ x: 0, y: 0 });
 
@@ -52,6 +54,36 @@ const outputMimeType = computed(() => {
     case "png": return "image/png";
     default: return "image/webp";
   }
+});
+
+// 计算裁剪区域
+const cropRegion = computed(() => {
+  const size = props.previewSize;
+  const aspectRatio = props.aspectRatio ?? 0;
+  
+  let cropW: number;
+  let cropH: number;
+  
+  if (aspectRatio === 0) {
+    // 自由裁剪，使用输出尺寸比例
+    cropW = props.outputWidth ?? 300;
+    cropH = props.outputHeight ?? 300;
+  } else {
+    // 固定宽高比
+    cropW = size;
+    cropH = size / aspectRatio;
+    if (cropH > size) {
+      cropH = size;
+      cropW = size * aspectRatio;
+    }
+  }
+  
+  return {
+    x: (size - cropW) / 2,
+    y: (size - cropH) / 2,
+    width: cropW,
+    height: cropH,
+  };
 });
 
 const open = () => {
@@ -70,8 +102,8 @@ const onFileChange = (e: Event) => {
     ElMessage.error("只能选择图片文件");
     return;
   }
-  if (file.size > props.maxSize) {
-    ElMessage.error(`图片不能超过 ${Math.round(props.maxSize / 1024 / 1024)}MB`);
+  if (file.size > (props.maxSize ?? 5 * 1024 * 1024)) {
+    ElMessage.error(`图片不能超过 ${Math.round((props.maxSize ?? 5 * 1024 * 1024) / 1024 / 1024)}MB`);
     return;
   }
 
@@ -82,9 +114,11 @@ const onFileChange = (e: Event) => {
     image.onload = () => {
       img.value = image;
       // 初始缩放：图片完整显示在裁剪框内
-      const scale = Math.max(props.outputSize / image.width, props.outputSize / image.height);
+      const crop = cropRegion.value;
+      const scale = Math.min(crop.width / image.width, crop.height / image.height);
       imgScale.value = scale;
       imgOffset.value = { x: 0, y: 0 };
+      imgRotation.value = 0;
       dialogVisible.value = true;
       nextTick(draw);
     };
@@ -103,53 +137,107 @@ const draw = () => {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const size = props.outputSize;
+  const size = props.previewSize ?? 380;
+  const crop = cropRegion.value;
+  const rounded = props.roundedCrop ?? false;
 
   // 清空，画背景
-  ctx.fillStyle = "#1f2329";
+  ctx.fillStyle = props.backgroundColor ?? '#1f2329';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // 计算图片绘制尺寸
+  // 保存状态
+  ctx.save();
+
+  // 移动到中心
+  const centerX = size / 2;
+  const centerY = size / 2;
+  ctx.translate(centerX, centerY);
+
+  // 应用旋转
+  if (imgRotation.value !== 0) {
+    ctx.rotate((imgRotation.value * Math.PI) / 180);
+  }
+
+  // 计算图片尺寸
   const w = image.width * imgScale.value;
   const h = image.height * imgScale.value;
-  const cx = canvas.width / 2 + imgOffset.value.x;
-  const cy = canvas.height / 2 + imgOffset.value.y;
-  const x = cx - w / 2;
-  const y = cy - h / 2;
+  const x = -w / 2 + imgOffset.value.x;
+  const y = -h / 2 + imgOffset.value.y;
+
+  // 圆形裁剪
+  if (rounded) {
+    const radius = Math.min(crop.width, crop.height) / 2;
+    const cx = crop.x + crop.width / 2;
+    const cy = crop.y + crop.height / 2;
+    ctx.beginPath();
+    ctx.arc(cx - centerX, cy - centerY, radius, 0, Math.PI * 2);
+    ctx.clip();
+  }
 
   // 绘制图片
   ctx.drawImage(image, x, y, w, h);
 
-  // 绘制半透明遮罩（裁剪框外的区域）
-  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-  const cutX = (canvas.width - size) / 2;
-  const cutY = (canvas.height - size) / 2;
-  // 上
-  ctx.fillRect(0, 0, canvas.width, cutY);
-  // 下
-  ctx.fillRect(0, cutY + size, canvas.width, canvas.height - cutY - size);
-  // 左
-  ctx.fillRect(0, cutY, cutX, size);
-  // 右
-  ctx.fillRect(cutX + size, cutY, canvas.width - cutX - size, size);
+  // 恢复状态
+  ctx.restore();
+
+  // 绘制遮罩
+  ctx.fillStyle = props.maskColor ?? 'rgba(0, 0, 0, 0.5)';
+  
+  if (rounded) {
+    // 圆形遮罩
+    const radius = Math.min(crop.width, crop.height) / 2;
+    const cx = crop.x + crop.width / 2;
+    const cy = crop.y + crop.height / 2;
+    
+    ctx.fillStyle = props.maskColor ?? 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.rect(0, 0, size, size);
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2, true);
+    ctx.fill();
+  } else {
+    // 上
+    ctx.fillRect(0, 0, size, crop.y);
+    // 下
+    ctx.fillRect(0, crop.y + crop.height, size, size - crop.y - crop.height);
+    // 左
+    ctx.fillRect(0, crop.y, crop.x, crop.height);
+    // 右
+    ctx.fillRect(crop.x + crop.width, crop.y, size - crop.x - crop.width, crop.height);
+  }
 
   // 绘制裁剪框边框
-  ctx.strokeStyle = "#409eff";
+  ctx.strokeStyle = props.borderColor ?? '#409eff';
   ctx.lineWidth = 2;
-  ctx.strokeRect(cutX, cutY, size, size);
+  
+  if (rounded) {
+    const radius = Math.min(crop.width, crop.height) / 2;
+    const cx = crop.x + crop.width / 2;
+    const cy = crop.y + crop.height / 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(crop.x, crop.y, crop.width, crop.height);
+  }
 
   // 9 宫格引导线
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-  ctx.lineWidth = 1;
-  for (let i = 1; i < 3; i++) {
-    ctx.beginPath();
-    ctx.moveTo(cutX + (size * i) / 3, cutY);
-    ctx.lineTo(cutX + (size * i) / 3, cutY + size);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cutX, cutY + (size * i) / 3);
-    ctx.lineTo(cutX + size, cutY + (size * i) / 3);
-    ctx.stroke();
+  if ((props.showGuideGrid ?? true) && !rounded) {
+    ctx.strokeStyle = props.guideColor ?? 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    const { x, y, width, height } = crop;
+    
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + width * i / 3, y);
+      ctx.lineTo(x + width * i / 3, y + height);
+      ctx.stroke();
+    }
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x, y + height * i / 3);
+      ctx.lineTo(x + width, y + height * i / 3);
+      ctx.stroke();
+    }
   }
 };
 
@@ -164,10 +252,25 @@ const onMouseMove = (e: MouseEvent) => {
   const dx = e.clientX - lastPos.value.x;
   const dy = e.clientY - lastPos.value.y;
   lastPos.value = { x: e.clientX, y: e.clientY };
-  imgOffset.value = {
-    x: imgOffset.value.x + dx,
-    y: imgOffset.value.y + dy
-  };
+  
+  const crop = cropRegion.value;
+  const w = (img.value?.width ?? 0) * imgScale.value;
+  const h = (img.value?.height ?? 0) * imgScale.value;
+  const maxOffsetX = Math.max(0, (w - crop.width) / 2);
+  const maxOffsetY = Math.max(0, (h - crop.height) / 2);
+  
+  if (props.boundToCrop ?? true) {
+    imgOffset.value = {
+      x: Math.max(-maxOffsetX, Math.min(maxOffsetX, imgOffset.value.x + dx)),
+      y: Math.max(-maxOffsetY, Math.min(maxOffsetY, imgOffset.value.y + dy)),
+    };
+  } else {
+    imgOffset.value = {
+      x: imgOffset.value.x + dx,
+      y: imgOffset.value.y + dy,
+    };
+  }
+  
   draw();
 };
 
@@ -178,31 +281,56 @@ const onMouseUp = () => {
 // 滚轮缩放
 const onWheel = (e: WheelEvent) => {
   e.preventDefault();
-  const delta = e.deltaY > 0 ? -0.05 : 0.05;
-  const newScale = Math.max(0.1, Math.min(5, imgScale.value + delta));
+  const delta = -e.deltaY * 0.001;
+  const minScale = props.minScale ?? 0.1;
+  const maxScale = props.maxScale ?? 5;
+  const newScale = Math.max(minScale, Math.min(maxScale, imgScale.value + delta));
   imgScale.value = newScale;
   draw();
 };
 
 // 缩放按钮
 const zoomIn = () => {
-  imgScale.value = Math.min(5, imgScale.value + 0.1);
+  const maxScale = props.maxScale ?? 5;
+  imgScale.value = Math.min(maxScale, imgScale.value + 0.1);
   draw();
 };
+
 const zoomOut = () => {
-  imgScale.value = Math.max(0.1, imgScale.value - 0.1);
+  const minScale = props.minScale ?? 0.1;
+  imgScale.value = Math.max(minScale, imgScale.value - 0.1);
   draw();
 };
+
+// 旋转
+const rotate = () => {
+  imgRotation.value = (imgRotation.value + 90) % 360;
+  if (img.value) {
+    const crop = cropRegion.value;
+    const rotatedW = imgRotation.value === 90 || imgRotation.value === 270 
+      ? img.value.height : img.value.width;
+    const rotatedH = imgRotation.value === 90 || imgRotation.value === 270 
+      ? img.value.width : img.value.height;
+    const scale = Math.min(crop.width / rotatedW, crop.height / rotatedH);
+    imgScale.value = scale;
+    imgOffset.value = { x: 0, y: 0 };
+  }
+  draw();
+};
+
+// 重置
 const reset = () => {
   if (!img.value) return;
-  imgScale.value = Math.max(props.outputSize / img.value.width, props.outputSize / img.value.height);
+  const crop = cropRegion.value;
+  imgScale.value = Math.min(crop.width / img.value.width, crop.height / img.value.height);
   imgOffset.value = { x: 0, y: 0 };
+  imgRotation.value = 0;
   draw();
 };
 
 // 确认裁剪
 const onConfirm = () => {
-  if (!img.value) {
+  if (!img.value || !canvasRef.value) {
     ElMessage.warning("请先选择图片");
     return;
   }
@@ -210,8 +338,10 @@ const onConfirm = () => {
 
   try {
     const canvas = document.createElement("canvas");
-    canvas.width = props.outputSize;
-    canvas.height = props.outputSize;
+    const outputW = props.outputWidth ?? 300;
+    const outputH = props.outputHeight ?? 300;
+    canvas.width = outputW;
+    canvas.height = outputH;
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       ElMessage.error("浏览器不支持 canvas");
@@ -219,24 +349,16 @@ const onConfirm = () => {
       return;
     }
 
-    const image = img.value;
-    // canvas 中图片的绘制参数
-    const w = image.width * imgScale.value;
-    const h = image.height * imgScale.value;
-    const cx = canvasRef.value!.width / 2 + imgOffset.value.x;
-    const cy = canvasRef.value!.height / 2 + imgOffset.value.y;
-    const imgX = cx - w / 2;
-    const imgY = cy - h / 2;
+    const crop = cropRegion.value;
+    const previewSize = props.previewSize ?? 380;
+    const scaleX = previewSize / canvasRef.value.width;
+    const scaleY = previewSize / canvasRef.value.height;
 
-    // 裁剪框在 canvas 上的位置
-    const cutX = (canvasRef.value!.width - props.outputSize) / 2;
-    const cutY = (canvasRef.value!.height - props.outputSize) / 2;
-
-    // 将裁剪框区域绘制到输出 canvas
+    // 绘制裁剪区域到输出 canvas
     ctx.drawImage(
-      canvasRef.value!, // 源 canvas（含图片）
-      cutX, cutY, props.outputSize, props.outputSize, // 源裁剪区域
-      0, 0, props.outputSize, props.outputSize // 目标区域
+      canvasRef.value,
+      crop.x * scaleX, crop.y * scaleY, crop.width * scaleX, crop.height * scaleY,
+      0, 0, outputW, outputH
     );
 
     canvas.toBlob(
@@ -250,7 +372,7 @@ const onConfirm = () => {
         dialogVisible.value = false;
       },
       outputMimeType.value,
-      props.quality
+      props.quality ?? 0.85
     );
   } catch (e: any) {
     submitting.value = false;
@@ -314,6 +436,9 @@ onBeforeUnmount(() => {
         </el-button>
         <el-button @click="zoomIn" title="放大">
           <el-icon><ZoomIn /></el-icon>
+        </el-button>
+        <el-button @click="rotate" title="旋转90°">
+          <el-icon><RefreshRight /></el-icon>
         </el-button>
         <el-button @click="reset" title="重置">
           <el-icon><RefreshRight /></el-icon>
