@@ -138,11 +138,6 @@ function ensureInit() {
     },
     { immediate: true }
   );
-
-  // 强制刷新事件（头像上传后触发）
-  emitter.on("refreshAvatar", () => {
-    refreshNavAvatar();
-  });
 }
 
 export function useNav() {
