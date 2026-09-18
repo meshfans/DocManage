@@ -266,7 +266,10 @@ func querySinglePragma(db *sql.DB, name string) (string, error) {
 // 历史版本此函数含 11+ 步 RBAC v3 数据迁移 + owner_user_id NULL 回填 + 7 张表加列 + 索引创建，
 // 现已全部合入 CREATE TABLE / CREATE INDEX（见 createTables() 与 createIndexes()）。
 func migrateDatabase() error {
-	// 当前无迁移任务（全新部署，所有字段已在 createTables 中定义）
+	// ai_config 表新增 api_path 字段（支持自定义 API 路径）
+	if err := addColumnIfMissing("ai_config", "api_path", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("迁移 ai_config.api_path: %w", err)
+	}
 	return nil
 }
 

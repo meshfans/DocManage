@@ -26,6 +26,7 @@ export interface PresetProvider {
   label: string;
   desc: string;
   defaultBase: string;
+  defaultPath: string; // API 路径，如 /v1/messages 或 /chat/completions
   models: PresetModel[];
 }
 
@@ -38,6 +39,7 @@ export interface PresetModel {
   badge?: "旗舰" | "主力" | "免费" | "极速" | "推理";
   recommended?: boolean;
   desc?: string;
+  multimodal?: boolean; // 是否支持图片输入（vision）
 }
 
 // 1. DeepSeek
@@ -46,6 +48,7 @@ const deepseekProvider: PresetProvider = {
   label: "DeepSeek",
   desc: "DeepSeek V4 Pro / V4 Flash",
   defaultBase: "https://api.deepseek.com",
+  defaultPath: "/chat/completions",
   models: [
     {
       key: "deepseek-v4-pro",
@@ -55,7 +58,8 @@ const deepseekProvider: PresetProvider = {
       outputTokens: 384_000,
       badge: "旗舰",
       recommended: true,
-      desc: "1M 上下文，V4 Pro"
+      desc: "1M 上下文，V4 Pro",
+      multimodal: true
     },
     {
       key: "deepseek-v4-flash",
@@ -64,7 +68,8 @@ const deepseekProvider: PresetProvider = {
       inputTokens: 1_000_000,
       outputTokens: 384_000,
       badge: "极速",
-      desc: "V4 Flash，轻量版"
+      desc: "V4 Flash，轻量版",
+      multimodal: true
     }
   ]
 };
@@ -75,6 +80,7 @@ const zhipuProvider: PresetProvider = {
   label: "智谱 GLM",
   desc: "GLM-4.7 Flash 免费 / GLM-5",
   defaultBase: "https://open.bigmodel.cn/api/anthropic",
+  defaultPath: "/messages", // 注意：无 /v1 前缀
   models: [
     {
       key: "glm-4.7-flash",
@@ -84,7 +90,8 @@ const zhipuProvider: PresetProvider = {
       outputTokens: 128_000,
       badge: "免费",
       recommended: true,
-      desc: "官方免费模型"
+      desc: "官方免费模型",
+      multimodal: false
     },
     {
       key: "glm-5",
@@ -93,7 +100,8 @@ const zhipuProvider: PresetProvider = {
       inputTokens: 200_000,
       outputTokens: 128_000,
       badge: "旗舰",
-      desc: "GLM-5 旗舰"
+      desc: "GLM-5 旗舰",
+      multimodal: true
     }
   ]
 };
@@ -104,6 +112,7 @@ const qwenProvider: PresetProvider = {
   label: "通义千问 Qwen",
   desc: "Qwen3.7-Max / Qwen3.6 Flash",
   defaultBase: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  defaultPath: "/chat/completions",
   models: [
     {
       key: "qwen3.7-max",
@@ -142,6 +151,7 @@ const kimiProvider: PresetProvider = {
   label: "月之暗面 Kimi",
   desc: "Kimi K2.6 / K2.5",
   defaultBase: "https://api.moonshot.cn/v1",
+  defaultPath: "/chat/completions",
   models: [
     {
       key: "kimi-k2.6",
@@ -171,6 +181,7 @@ const doubaoProvider: PresetProvider = {
   label: "字节豆包 Doubao",
   desc: "豆包 Seed 2.1 Pro",
   defaultBase: "https://ark.cn-beijing.volces.com/api/v3",
+  defaultPath: "/chat/completions",
   models: [
     {
       key: "doubao-seed-2-1-pro-260628",
@@ -200,6 +211,7 @@ const minimaxProvider: PresetProvider = {
   label: "MiniMax",
   desc: "M3 / M2.7",
   defaultBase: "https://api.minimaxi.com/anthropic",
+  defaultPath: "/v1/messages", // MiniMax 使用 /v1/messages
   models: [
     {
       key: "MiniMax-M3",
@@ -209,7 +221,8 @@ const minimaxProvider: PresetProvider = {
       outputTokens: 131_000,
       badge: "旗舰",
       recommended: true,
-      desc: "M3 最新旗舰"
+      desc: "M3 最新旗舰",
+      multimodal: true
     },
     {
       key: "MiniMax-M2.7",
@@ -218,7 +231,8 @@ const minimaxProvider: PresetProvider = {
       inputTokens: 204_800,
       outputTokens: 131_000,
       badge: "主力",
-      desc: "M2.7 主力"
+      desc: "M2.7 主力",
+      multimodal: false
     }
   ]
 };
@@ -229,6 +243,7 @@ const siliconflowProvider: PresetProvider = {
   label: "硅基流动 SiliconFlow",
   desc: "国内开源模型低价",
   defaultBase: "https://api.siliconflow.cn/v1",
+  defaultPath: "/chat/completions",
   models: [
     {
       key: "Qwen/Qwen3-235B-A22B-Instruct",
@@ -258,6 +273,7 @@ const openaiProvider: PresetProvider = {
   label: "OpenAI",
   desc: "GPT-5.5 / GPT-4o",
   defaultBase: "https://api.openai.com/v1",
+  defaultPath: "/chat/completions",
   models: [
     {
       key: "gpt-5.5",
@@ -267,7 +283,8 @@ const openaiProvider: PresetProvider = {
       outputTokens: 128_000,
       badge: "旗舰",
       recommended: true,
-      desc: "GPT-5.5 旗舰"
+      desc: "GPT-5.5 旗舰",
+      multimodal: true
     },
     {
       key: "gpt-4o",
@@ -276,7 +293,8 @@ const openaiProvider: PresetProvider = {
       inputTokens: 128_000,
       outputTokens: 16_384,
       badge: "主力",
-      desc: "GPT-4o 均衡"
+      desc: "GPT-4o 均衡",
+      multimodal: true
     }
   ]
 };
@@ -287,6 +305,7 @@ const anthropicProvider: PresetProvider = {
   label: "Anthropic Claude",
   desc: "Claude Opus 4.8 / Sonnet 5",
   defaultBase: "https://api.anthropic.com",
+  defaultPath: "/v1/messages",
   models: [
     {
       key: "claude-opus-4-8",
@@ -296,7 +315,8 @@ const anthropicProvider: PresetProvider = {
       outputTokens: 128_000,
       badge: "旗舰",
       recommended: true,
-      desc: "Claude Opus 4.8 旗舰"
+      desc: "Claude Opus 4.8 旗舰",
+      multimodal: true
     },
     {
       key: "claude-sonnet-5",
@@ -305,7 +325,8 @@ const anthropicProvider: PresetProvider = {
       inputTokens: 1_000_000,
       outputTokens: 128_000,
       badge: "旗舰",
-      desc: "Claude Sonnet 5"
+      desc: "Claude Sonnet 5",
+      multimodal: true
     }
   ]
 };
@@ -316,6 +337,7 @@ const googleProvider: PresetProvider = {
   label: "Google Gemini",
   desc: "Gemini 2.5 Pro / Flash",
   defaultBase: "https://generativelanguage.googleapis.com",
+  defaultPath: "/v1beta/models/:model:generateContent", // Google 特殊路径格式
   models: [
     {
       key: "gemini-2.5-pro",
@@ -325,7 +347,8 @@ const googleProvider: PresetProvider = {
       outputTokens: 64_000,
       badge: "旗舰",
       recommended: true,
-      desc: "Gemini 2.5 Pro"
+      desc: "Gemini 2.5 Pro",
+      multimodal: true
     },
     {
       key: "gemini-2.5-flash",
@@ -334,7 +357,8 @@ const googleProvider: PresetProvider = {
       inputTokens: 1_000_000,
       outputTokens: 65_000,
       badge: "极速",
-      desc: "Gemini 2.5 Flash 极速"
+      desc: "Gemini 2.5 Flash 极速",
+      multimodal: true
     }
   ]
 };
@@ -345,6 +369,7 @@ const ollamaProvider: PresetProvider = {
   label: "Ollama（本地推理）",
   desc: "本地推理，免鉴权",
   defaultBase: "http://127.0.0.1:11434",
+  defaultPath: "/api/chat",
   models: [
     {
       key: "qwen3:32b",
@@ -374,6 +399,7 @@ const customProvider: PresetProvider = {
   label: "自定义（OpenAI 兼容）",
   desc: "兼容 OpenAI 协议的任意第三方网关",
   defaultBase: "",
+  defaultPath: "/chat/completions",
   models: []
 };
 

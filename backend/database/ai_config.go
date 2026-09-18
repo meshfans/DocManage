@@ -15,27 +15,28 @@ type AIConfig struct {
 	Protocol            string          `json:"protocol"`
 	ModelName           string          `json:"model_name"`
 	APIKey              string          `json:"api_key"`
-	APIKeyHasValue      bool           `json:"api_key_has_value"`
+	APIKeyHasValue      bool            `json:"api_key_has_value"`
 	APIBase             string          `json:"api_base"`
+	APIPath             string          `json:"api_path"` // API 路径，如 /chat/completions
 	ProxyURL            string          `json:"proxy_url,omitempty"`
 	DefaultParams       string          `json:"default_params,omitempty"`
 	Extra               string          `json:"extra,omitempty"`
 	IsDefault           int             `json:"is_default"`
 	Status              int             `json:"status"`
-	MultimodalSupported *int           `json:"multimodal_supported,omitempty"`
+	MultimodalSupported *int            `json:"multimodal_supported,omitempty"`
 	MultimodalCheckedAt *int64         `json:"multimodal_checked_at,omitempty"`
 	MultimodalCheckSrc  string         `json:"multimodal_check_source,omitempty"`
 	TestResult          string          `json:"test_result,omitempty"`
-	TestResultAt        *int64         `json:"test_result_at,omitempty"`
+	TestResultAt        *int64          `json:"test_result_at,omitempty"`
 	CreatedAt           int64           `json:"created_at"`
 	UpdatedAt           int64           `json:"updated_at"`
-	DeletedAt           *int64         `json:"deleted_at,omitempty"`
+	DeletedAt           *int64          `json:"deleted_at,omitempty"`
 }
 
 // ListAIConfigs 获取所有启用的 AI 配置
 func ListAIConfigs() ([]AIConfig, error) {
 	rows, err := DB.Query(`
-		SELECT id, name, provider, protocol, model_name, api_key, api_base, proxy_url,
+		SELECT id, name, provider, protocol, model_name, api_key, api_base, api_path, proxy_url,
 		       default_params, extra, is_default, status, multimodal_supported,
 		       multimodal_checked_at, multimodal_check_source, test_result,
 		       test_result_at, created_at, updated_at, deleted_at
@@ -51,7 +52,7 @@ func ListAIConfigs() ([]AIConfig, error) {
 	var configs []AIConfig
 	for rows.Next() {
 		var c AIConfig
-		var apiKey, proxyURL, defaultParams, extra, testResult sql.NullString
+		var apiKey, apiPath, proxyURL, defaultParams, extra, testResult sql.NullString
 		var multimodalSupported sql.NullInt64
 		var multimodalCheckedAt, testResultAt sql.NullInt64
 		var multimodalCheckSrc sql.NullString
@@ -59,7 +60,7 @@ func ListAIConfigs() ([]AIConfig, error) {
 
 		err := rows.Scan(
 			&c.ID, &c.Name, &c.Provider, &c.Protocol, &c.ModelName,
-			&apiKey, &c.APIBase, &proxyURL,
+			&apiKey, &c.APIBase, &apiPath, &proxyURL,
 			&defaultParams, &extra, &c.IsDefault, &c.Status,
 			&multimodalSupported, &multimodalCheckedAt, &multimodalCheckSrc,
 			&testResult, &testResultAt, &c.CreatedAt, &c.UpdatedAt, &deletedAt,
@@ -70,6 +71,7 @@ func ListAIConfigs() ([]AIConfig, error) {
 
 		c.APIKey = apiKey.String
 		c.APIKeyHasValue = apiKey.String != ""
+		c.APIPath = apiPath.String
 		c.ProxyURL = proxyURL.String
 		c.DefaultParams = defaultParams.String
 		c.Extra = extra.String
@@ -100,14 +102,14 @@ func ListAIConfigs() ([]AIConfig, error) {
 // GetAIConfigByID 根据 ID 获取单个配置
 func GetAIConfigByID(id int64) (*AIConfig, error) {
 	var c AIConfig
-	var apiKey, proxyURL, defaultParams, extra, testResult sql.NullString
+	var apiKey, apiPath, proxyURL, defaultParams, extra, testResult sql.NullString
 	var multimodalSupported sql.NullInt64
 	var multimodalCheckedAt, testResultAt sql.NullInt64
 	var multimodalCheckSrc sql.NullString
 	var deletedAt sql.NullInt64
 
 	err := DB.QueryRow(`
-		SELECT id, name, provider, protocol, model_name, api_key, api_base, proxy_url,
+		SELECT id, name, provider, protocol, model_name, api_key, api_base, api_path, proxy_url,
 		       default_params, extra, is_default, status, multimodal_supported,
 		       multimodal_checked_at, multimodal_check_source, test_result,
 		       test_result_at, created_at, updated_at, deleted_at
@@ -115,7 +117,7 @@ func GetAIConfigByID(id int64) (*AIConfig, error) {
 		WHERE id = ? AND deleted_at IS NULL
 	`, id).Scan(
 		&c.ID, &c.Name, &c.Provider, &c.Protocol, &c.ModelName,
-		&apiKey, &c.APIBase, &proxyURL,
+		&apiKey, &c.APIBase, &apiPath, &proxyURL,
 		&defaultParams, &extra, &c.IsDefault, &c.Status,
 		&multimodalSupported, &multimodalCheckedAt, &multimodalCheckSrc,
 		&testResult, &testResultAt, &c.CreatedAt, &c.UpdatedAt, &deletedAt,
@@ -129,6 +131,7 @@ func GetAIConfigByID(id int64) (*AIConfig, error) {
 
 	c.APIKey = apiKey.String
 	c.APIKeyHasValue = apiKey.String != ""
+	c.APIPath = apiPath.String
 	c.ProxyURL = proxyURL.String
 	c.DefaultParams = defaultParams.String
 	c.Extra = extra.String
@@ -157,14 +160,14 @@ func GetAIConfigByID(id int64) (*AIConfig, error) {
 // GetDefaultAIConfig 获取默认 AI 配置
 func GetDefaultAIConfig() (*AIConfig, error) {
 	var c AIConfig
-	var apiKey, proxyURL, defaultParams, extra, testResult sql.NullString
+	var apiKey, apiPath, proxyURL, defaultParams, extra, testResult sql.NullString
 	var multimodalSupported sql.NullInt64
 	var multimodalCheckedAt, testResultAt sql.NullInt64
 	var multimodalCheckSrc sql.NullString
 	var deletedAt sql.NullInt64
 
 	err := DB.QueryRow(`
-		SELECT id, name, provider, protocol, model_name, api_key, api_base, proxy_url,
+		SELECT id, name, provider, protocol, model_name, api_key, api_base, api_path, proxy_url,
 		       default_params, extra, is_default, status, multimodal_supported,
 		       multimodal_checked_at, multimodal_check_source, test_result,
 		       test_result_at, created_at, updated_at, deleted_at
@@ -173,7 +176,7 @@ func GetDefaultAIConfig() (*AIConfig, error) {
 		LIMIT 1
 	`).Scan(
 		&c.ID, &c.Name, &c.Provider, &c.Protocol, &c.ModelName,
-		&apiKey, &c.APIBase, &proxyURL,
+		&apiKey, &c.APIBase, &apiPath, &proxyURL,
 		&defaultParams, &extra, &c.IsDefault, &c.Status,
 		&multimodalSupported, &multimodalCheckedAt, &multimodalCheckSrc,
 		&testResult, &testResultAt, &c.CreatedAt, &c.UpdatedAt, &deletedAt,
@@ -187,6 +190,7 @@ func GetDefaultAIConfig() (*AIConfig, error) {
 
 	c.APIKey = apiKey.String
 	c.APIKeyHasValue = apiKey.String != ""
+	c.APIPath = apiPath.String
 	c.ProxyURL = proxyURL.String
 	c.DefaultParams = defaultParams.String
 	c.Extra = extra.String
@@ -216,10 +220,10 @@ func GetDefaultAIConfig() (*AIConfig, error) {
 func CreateAIConfig(c *AIConfig) (int64, error) {
 	now := time.Now().Unix()
 	result, err := DB.Exec(`
-		INSERT INTO ai_config (name, provider, protocol, model_name, api_key, api_base, proxy_url,
+		INSERT INTO ai_config (name, provider, protocol, model_name, api_key, api_base, api_path, proxy_url,
 		                      default_params, extra, is_default, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, c.Name, c.Provider, c.Protocol, c.ModelName, c.APIKey, c.APIBase, c.ProxyURL,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, c.Name, c.Provider, c.Protocol, c.ModelName, c.APIKey, c.APIBase, c.APIPath, c.ProxyURL,
 		c.DefaultParams, c.Extra, c.IsDefault, 1, now, now)
 	if err != nil {
 		return 0, err
@@ -233,11 +237,11 @@ func UpdateAIConfig(c *AIConfig) error {
 	_, err := DB.Exec(`
 		UPDATE ai_config SET
 			name = ?, provider = ?, protocol = ?, model_name = ?,
-			api_base = ?, proxy_url = ?, default_params = ?, extra = ?,
+			api_base = ?, api_path = ?, proxy_url = ?, default_params = ?, extra = ?,
 			is_default = ?, updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`, c.Name, c.Provider, c.Protocol, c.ModelName,
-		c.APIBase, c.ProxyURL, c.DefaultParams, c.Extra,
+		c.APIBase, c.APIPath, c.ProxyURL, c.DefaultParams, c.Extra,
 		c.IsDefault, now, c.ID)
 	return err
 }
@@ -337,10 +341,11 @@ type AIConfigPayload struct {
 	ModelName      string                 `json:"model_name"`
 	APIKey         string                 `json:"api_key,omitempty"`
 	APIBase        string                 `json:"api_base"`
+	APIPath        string                 `json:"api_path,omitempty"` // API 路径，如 /chat/completions
 	ProxyURL       string                 `json:"proxy_url,omitempty"`
 	DefaultParams  map[string]interface{} `json:"default_params,omitempty"`
 	Extra          map[string]interface{} `json:"extra,omitempty"`
-	IsDefault      bool                   `json:"is_default"`
+	IsDefault     bool                   `json:"is_default"`
 }
 
 // ToAIConfig 将 payload 转换为 AIConfig
@@ -382,6 +387,7 @@ func (p *AIConfigPayload) ToAIConfig() (*AIConfig, error) {
 		ModelName:     p.ModelName,
 		APIKey:        p.APIKey,
 		APIBase:       p.APIBase,
+		APIPath:       p.APIPath,
 		ProxyURL:      p.ProxyURL,
 		DefaultParams: defaultParamsJSON,
 		Extra:         extraJSON,

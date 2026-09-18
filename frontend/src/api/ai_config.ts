@@ -32,6 +32,7 @@ export interface AIConfigItem {
   provider: Provider | string;
   protocol: Protocol | string;
   api_base: string;
+  api_path: string;
   api_key: string;
   api_key_has_value: boolean;
   default_params: string;
@@ -54,6 +55,7 @@ export interface AIConfigPayload {
   protocol: Protocol | string;
   model_name: string;
   api_base: string;
+  api_path?: string;
   api_key?: string;
   default_params?: Record<string, unknown>;
   extra?: Record<string, unknown>;
@@ -137,6 +139,7 @@ export function testAIConfigInline(payload: {
   protocol: string;
   model_name: string;
   api_base: string;
+  api_path?: string;
   api_key?: string;
   default_params?: Record<string, unknown>;
 }) {
