@@ -69,7 +69,7 @@ export default {
       component: () => import("@/views/system/ai-config.vue"),
       meta: {
         title: "AI 配置",
-        icon: "ri-robot-line",
+        icon: "ri-robot-2-line",
         rank: 4
       }
     },
