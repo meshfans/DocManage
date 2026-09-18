@@ -87,10 +87,10 @@ func SeedAIConfigs() error {
 			IsDefault: 0,
 		},
 		{
-			Name:      "Ollama · qwen3.5:2b（本地推理）",
+			Name:      "Ollama · qwen3:1.7b（本地推理）",
 			Provider:  "ollama",
 			Protocol:  "ollama_chat",
-			ModelName: "qwen3.5:2b",
+			ModelName: "qwen3:1.7b",
 			APIBase:   "http://127.0.0.1:11434",
 			DefaultJSON: mustMarshalJSON(map[string]interface{}{
 				"temperature": 0.7,
@@ -100,7 +100,7 @@ func SeedAIConfigs() error {
 			ExtraJSON: mustMarshalJSON(map[string]interface{}{
 				"free":     true,
 				"authFree": true,
-				"note":     "需先启动本地 Ollama 服务（ollama serve），再 `ollama pull qwen3.5:2b`",
+				"note":     "需先启动本地 Ollama 服务（ollama serve），再 `ollama pull qwen3:1.7b`",
 			}),
 			IsDefault: 0,
 		},
