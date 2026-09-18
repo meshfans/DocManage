@@ -68,14 +68,27 @@ var font5x7 = map[rune][]string{
 }
 
 // drawText 在图像上居中绘制字符串
+// 自动计算 scale 以确保文字完整居中显示在图像内
 func drawText(img *image.RGBA, text string, width, height int, c color.Color) {
 	runes := []rune(text)
 	charWidth := 5
 	charHeight := 7
-	gap := 1
-	scale := 12 // 每字符像素缩放
+	gap := 2 // 字符间距加宽到 2 像素
 
-	textWidth := (len(runes) * charWidth + (len(runes)-1)*gap) * scale
+	// 计算最大可用 scale（确保文字不超出图像）
+	maxTextWidth := width - 16 // 左右各留 8px 边距
+	maxTextHeight := height - 16
+	scaleW := maxTextWidth / (len(runes)*charWidth + (len(runes)-1)*gap)
+	scaleH := maxTextHeight / charHeight
+	scale := scaleW
+	if scaleH < scale {
+		scale = scaleH
+	}
+	if scale < 1 {
+		scale = 1
+	}
+
+	textWidth := (len(runes)*charWidth + (len(runes)-1)*gap) * scale
 	textHeight := charHeight * scale
 
 	startX := (width - textWidth) / 2
@@ -91,7 +104,6 @@ func drawText(img *image.RGBA, text string, width, height int, c color.Color) {
 				if r != 'X' {
 					continue
 				}
-				// 放大 scale 倍
 				for sy := 0; sy < scale; sy++ {
 					for sx := 0; sx < scale; sx++ {
 						x := startX + (i*(charWidth+gap)+rx)*scale + sx
