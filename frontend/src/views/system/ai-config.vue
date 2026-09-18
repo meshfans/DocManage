@@ -4,9 +4,6 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Plus,
   Connection,
-  Edit,
-  Delete,
-  Star,
   StarFilled,
   View,
   Hide,
@@ -14,7 +11,8 @@ import {
   Picture,
   CircleCheck,
   CircleClose,
-  Warning
+  Warning,
+  More
 } from "@element-plus/icons-vue";
 import {
   listAIConfigs,
@@ -437,37 +435,42 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-dropdown trigger="contextmenu" @command="(cmd: string) => {
-              if (cmd === 'mm-support') handleToggleMultimodal(row as AIConfigItem, 1);
-              else if (cmd === 'mm-unsupport') handleToggleMultimodal(row as AIConfigItem, 0);
-            }">
-              <span>
-                <el-button link size="small" type="primary" :loading="testingIds.has(row.id)" @click="handleTest(row as AIConfigItem)">
-                  <el-icon class="mr-1"><Connection /></el-icon>测试
+            <span class="op-cell">
+              <el-button link type="primary" size="small" :loading="testingIds.has(row.id)" @click="handleTest(row as AIConfigItem)">
+                测试
+              </el-button>
+              <el-button link type="primary" size="small" @click="openEdit(row as AIConfigItem)">
+                编辑
+              </el-button>
+              <el-dropdown trigger="click" @command="(cmd: string) => {
+                if (cmd === 'default') handleSetDefault(row as AIConfigItem);
+                else if (cmd === 'delete') handleDelete(row as AIConfigItem);
+                else if (cmd === 'mm-support') handleToggleMultimodal(row as AIConfigItem, 1);
+                else if (cmd === 'mm-unsupport') handleToggleMultimodal(row as AIConfigItem, 0);
+              }">
+                <el-button type="primary" link size="small" class="op-more">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
                 </el-button>
-                <el-button link size="small" type="primary" @click="openEdit(row as AIConfigItem)">
-                  <el-icon class="mr-1"><Edit /></el-icon>编辑
-                </el-button>
-                <el-button v-if="!row.is_default" link size="small" type="warning" @click="handleSetDefault(row as AIConfigItem)">
-                  <el-icon class="mr-1"><Star /></el-icon>默认
-                </el-button>
-                <el-button link size="small" type="danger" @click="handleDelete(row as AIConfigItem)">
-                  <el-icon class="mr-1"><Delete /></el-icon>删除
-                </el-button>
-              </span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="mm-support" :disabled="(row as AIConfigItem).multimodal_supported === 1 && (row as AIConfigItem).multimodal_check_source === 'manual'">
-                    <el-icon class="mr-1"><CircleCheck /></el-icon>手动标记为支持
-                  </el-dropdown-item>
-                  <el-dropdown-item command="mm-unsupport" :disabled="(row as AIConfigItem).multimodal_supported === 0 && (row as AIConfigItem).multimodal_check_source === 'manual'">
-                    <el-icon class="mr-1"><CircleClose /></el-icon>手动标记为不支持
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-if="!(row as AIConfigItem).is_default" command="default">
+                      设为默认
+                    </el-dropdown-item>
+                    <el-dropdown-item command="mm-support" :disabled="(row as AIConfigItem).multimodal_supported === 1 && (row as AIConfigItem).multimodal_check_source === 'manual'">
+                      手动标记为支持多模态
+                    </el-dropdown-item>
+                    <el-dropdown-item command="mm-unsupport" :disabled="(row as AIConfigItem).multimodal_supported === 0 && (row as AIConfigItem).multimodal_check_source === 'manual'">
+                      手动标记为不支持
+                    </el-dropdown-item>
+                    <el-dropdown-item command="delete" divided style="color: var(--el-color-danger)">
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
           </template>
         </el-table-column>
 
