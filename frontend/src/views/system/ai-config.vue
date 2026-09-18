@@ -643,4 +643,23 @@ function mergeDefaultParams(base: Record<string, unknown>, raw: string): Record<
   color: var(--el-text-color-placeholder);
   font-size: 13px;
 }
+.op-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+}
+.op-cell .el-button {
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+.op-cell .op-more {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  margin-left: 12px !important;
+}
+.op-cell .op-more .el-icon {
+  margin-left: 0 !important;
+}
 </style>
