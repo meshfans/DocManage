@@ -727,6 +727,30 @@ func createTables() error {
 	    created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
 	    updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 	);
+
+	-- AI 配置表
+	CREATE TABLE IF NOT EXISTS ai_config (
+	    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+	    name                    TEXT    DEFAULT '',
+	    provider                TEXT    NOT NULL,
+	    protocol                TEXT    NOT NULL,
+	    model_name              TEXT    NOT NULL,
+	    api_key                 TEXT    NOT NULL DEFAULT '',
+	    api_base                TEXT    NOT NULL,
+	    proxy_url               TEXT    DEFAULT '',
+	    default_params          TEXT    DEFAULT '',
+	    extra                   TEXT    DEFAULT '',
+	    is_default              INTEGER NOT NULL DEFAULT 0,
+	    status                  INTEGER NOT NULL DEFAULT 1,
+	    multimodal_supported     INTEGER,
+	    multimodal_checked_at   INTEGER,
+	    multimodal_check_source TEXT,
+	    test_result             TEXT,
+	    test_result_at          INTEGER,
+	    created_at              INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+	    updated_at              INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+	    deleted_at              INTEGER
+	);
 	`
 	if _, err := DB.Exec(query); err != nil {
 		return err
@@ -825,6 +849,10 @@ func createIndexes() error {
 		// K.2：复合索引让"按 reason + 时间窗口"查询走索引扫描而非全表。
 		`CREATE INDEX IF NOT EXISTS idx_worm_locked_at ON worm_record(locked_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_worm_reason_at ON worm_record(locked_reason, locked_at DESC)`,
+
+		// AI 配置索引
+		`CREATE INDEX IF NOT EXISTS idx_ai_config_status ON ai_config(status) WHERE deleted_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_config_default ON ai_config(is_default) WHERE deleted_at IS NULL`,
 	}
 	for _, idx := range indexes {
 		if _, err := DB.Exec(idx); err != nil {

@@ -256,6 +256,20 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/media/upload", mediaHandler.Upload)
 				protected.GET("/media/check-hash", mediaHandler.CheckHash)
 				protected.GET("/media/:id/verify", mediaHandler.Verify)
+
+				// AI 配置管理
+				aiConfigHandler := handlers.NewAIConfigHandler()
+				protected.GET("/ai-configs", aiConfigHandler.ListAIConfigs)
+				protected.GET("/ai-configs/:id", aiConfigHandler.GetAIConfig)
+				protected.POST("/ai-configs", aiConfigHandler.CreateAIConfig)
+				protected.POST("/ai-configs/:id", aiConfigHandler.UpdateAIConfig)
+				protected.POST("/ai-configs/:id/delete", aiConfigHandler.DeleteAIConfig)
+				protected.POST("/ai-configs/:id/default", aiConfigHandler.SetDefaultAIConfig)
+				protected.POST("/ai-configs/:id/test", aiConfigHandler.TestAIConfig)
+				protected.POST("/ai-configs/:id/key", aiConfigHandler.UpdateAIConfigKey)
+				protected.POST("/ai-configs/:id/multimodal", aiConfigHandler.ToggleMultimodal)
+				protected.POST("/ai-configs/test", aiConfigHandler.TestAIConfigInline)
+				protected.GET("/ai-meta", aiConfigHandler.GetAIMeta)
 			}
 		}
 	}

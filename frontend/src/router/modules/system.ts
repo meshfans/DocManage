@@ -64,6 +64,16 @@ export default {
       }
     },
     {
+      path: "/system/ai-config",
+      name: "AIConfig",
+      component: () => import("@/views/system/ai-config.vue"),
+      meta: {
+        title: "AI 配置",
+        icon: "ri-robot-line",
+        rank: 4
+      }
+    },
+    {
       path: "/system/audit",
       name: "AuditLog",
       component: () => import("@/views/system/audit.vue"),
@@ -71,10 +81,6 @@ export default {
         title: "审计日志",
         icon: "ri/shield-keyhole-line",
         rank: 6,
-        // ⚠️ M-F4 修复：admin only 由 meta.adminOnly 标记，不复用 system:config:get 权限码。
-        // 后端 audit.* 端点未配置权限码（RequireAdmin 兜底），前端守卫也按 admin 角色拦截。
-        // permissions 故意留空数组：isRouteGuarded 见到空数组会跳过 permission 检查；
-        // adminOnly 标记由 router/utils.ts 单独拦截。
         permissions: [],
         adminOnly: true
       }
