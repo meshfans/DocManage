@@ -277,7 +277,9 @@ func SetDefaultAIConfig(id int64) error {
 }
 
 // SetMultimodalSupported 设置多模态支持状态
+//   - multimodal_checked_at 用毫秒时间戳（与前端 Date.now() 对齐）
 func SetMultimodalSupported(id int64, supported int, source string) error {
+	nowMs := time.Now().UnixMilli()
 	now := time.Now().Unix()
 	_, err := DB.Exec(`
 		UPDATE ai_config SET
@@ -286,7 +288,7 @@ func SetMultimodalSupported(id int64, supported int, source string) error {
 			multimodal_check_source = ?,
 			updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
-	`, supported, now, source, now, id)
+	`, supported, nowMs, source, now, id)
 	return err
 }
 
@@ -305,12 +307,14 @@ func ClearMultimodalCheck(id int64) error {
 }
 
 // SetTestResult 设置测试结果
+//   - test_result_at 用毫秒时间戳（与前端 Date.now() 对齐）
 func SetTestResult(id int64, result string) error {
+	nowMs := time.Now().UnixMilli()
 	now := time.Now().Unix()
 	_, err := DB.Exec(`
 		UPDATE ai_config SET test_result = ?, test_result_at = ?, updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
-	`, result, now, now, id)
+	`, result, nowMs, now, id)
 	return err
 }
 

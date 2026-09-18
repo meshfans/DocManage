@@ -297,18 +297,25 @@ func (h *AIConfigHandler) TestAIConfig(c *gin.Context) {
 		testResult.Message = "连接成功"
 	}
 
-	// 保存测试结果
+	// 保存测试结果（毫秒时间戳，前端会兼容秒/毫秒）
 	resultJSON, _ := json.Marshal(testResult)
 	database.SetTestResult(id, string(resultJSON))
 
-	// 尝试多模态检测
-	mmResult := h.detectMultimodal(adapter, aiCfg)
+	// 多模态检测（参考 DocSmart 双保险判断）
+	mmResult := ai.TestMultimodal(adapter)
 	if mmResult != nil {
-		testResult.Multimodal = mmResult
-		if mmResult.Supported {
-			database.SetMultimodalSupported(id, 1, "auto")
-		} else {
-			database.SetMultimodalSupported(id, 0, "auto")
+		testResult.Multimodal = &ai.MultimodalResult{
+			Supported: mmResult.Supported != nil && *mmResult.Supported,
+			LatencyMs: mmResult.LatencyMs,
+			Message:   mmResult.FullMessage,
+		}
+		// 三态语义：nil = 检测不确定，不写 DB
+		if mmResult.Supported != nil {
+			if *mmResult.Supported {
+				database.SetMultimodalSupported(id, 1, "auto")
+			} else {
+				database.SetMultimodalSupported(id, 0, "auto")
+			}
 		}
 	}
 
@@ -408,40 +415,7 @@ func (h *AIConfigHandler) GetAIMeta(c *gin.Context) {
 }
 
 // detectMultimodal 检测多模态支持
-func (h *AIConfigHandler) detectMultimodal(adapter ai.ProviderAdapter, cfg *ai.Config) *ai.MultimodalResult {
-	req := &ai.ChatRequest{
-		Messages: []ai.ChatMessage{
-			{Role: "user", Content: "这张图片里有什么？请用一句话描述。"},
-		},
-		Images: []ai.ChatImage{
-			{
-				Base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-				Mime:   "image/png",
-			},
-		},
-		MaxTokens: ptrInt(50),
-	}
-
-	resp, err := adapter.Chat(req)
-	if err != nil {
-		return &ai.MultimodalResult{
-			Supported: false,
-			Message:   err.Error(),
-		}
-	}
-
-	if resp.Text == "" {
-		return &ai.MultimodalResult{
-			Supported: false,
-			Message:   "响应为空",
-		}
-	}
-
-	return &ai.MultimodalResult{
-		Supported: true,
-		Message:   resp.Text,
-	}
-}
+// 已迁移至 ai.TestMultimodal（参考 DocSmart v1.8.11+ 双保险判断）
 
 // maskAPIKey 脱敏 API Key
 func maskAPIKey(key string) string {

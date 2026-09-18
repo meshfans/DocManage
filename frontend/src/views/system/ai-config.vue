@@ -321,11 +321,13 @@ function getTestFeedbackTag(row: AIConfigItem) {
 
 function formatTestAt(at: number | null | undefined): string {
   if (!at) return "";
-  const diff = Date.now() - at;
+  // 兼容旧数据：若时间戳看起来像秒（< 1e12），转换为毫秒
+  const ts = at < 1_000_000_000_000 ? at * 1000 : at;
+  const diff = Date.now() - ts;
   if (diff < 60_000) return "刚刚";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  return new Date(at).toLocaleString("zh-CN");
+  return new Date(ts).toLocaleString("zh-CN");
 }
 
 function onPresetModelChange(key: string) {
