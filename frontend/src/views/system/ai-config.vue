@@ -56,6 +56,7 @@ const initialForm = () => ({
   protocol: "openai_chat",
   modelKey: "" as string,
   apiBase: "" as string,
+  apiPath: "" as string,
   apiKey: "" as string,
   defaultParams: {
     temperature: 0.7,
@@ -171,7 +172,8 @@ async function openEdit(row: AIConfigItem) {
     provider: String(cfg.provider ?? "deepseek"),
     protocol: String(cfg.protocol ?? "openai_chat"),
     modelKey: cfg.model_name,
-    apiBase: cfg.api_base,
+    apiBase: cfg.api_base ?? "",
+    apiPath: cfg.api_path ?? "",
     apiKey: "",
     defaultParams: baseParams,
     defaultParamsRaw,
@@ -208,11 +210,21 @@ async function handleSave() {
 
   dialogSaving.value = true;
   try {
+    // 根据 provider 获取预设的 api_path
+    let apiPath = form.apiPath?.trim();
+    if (!apiPath && activeTab.value !== "custom") {
+      const preset = PRESET_PROVIDERS.find((p) => p.value === form.provider);
+      if (preset) {
+        apiPath = preset.defaultPath;
+      }
+    }
+
     const payload: AIConfigPayload = {
       provider: activeTab.value === "custom" ? "custom" : form.provider,
       protocol: form.protocol,
       model_name: form.modelKey.trim(),
       api_base: form.apiBase.trim(),
+      api_path: apiPath,
       default_params: mergeDefaultParams(form.defaultParams, form.defaultParamsRaw),
       is_default: form.isDefault
     };
