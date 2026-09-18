@@ -23,6 +23,7 @@ export interface CropperOptions {
   maskColor?: string;
   borderColor?: string;
   guideColor?: string;
+  gridColor?: string;
 
   // UI 配置
   title?: string;
@@ -49,6 +50,7 @@ export interface FullCropperOptions {
   maskColor: string;
   borderColor: string;
   guideColor: string;
+  gridColor: string;
   title: string;
   previewSize: number;
   showGuideGrid: boolean;
@@ -67,10 +69,11 @@ export const fullDefaultOptions: FullCropperOptions = {
   maxSize: 5 * 1024 * 1024,
   accept: 'image/*',
   aspectRatio: 0,
-  backgroundColor: '#1f2329',
+  backgroundColor: 'rgba(0, 0, 0, 0.85)',
   maskColor: 'rgba(0, 0, 0, 0.5)',
   borderColor: '#409eff',
   guideColor: 'rgba(255, 255, 255, 0.4)',
+  gridColor: 'rgba(255, 255, 255, 0.4)',
   title: '裁剪图片',
   previewSize: 380,
   showGuideGrid: true,

@@ -45,7 +45,7 @@ function disposeAvatarUrl() {
  *  - token 存在 Cookies "authorized-token" 里（key 由 TokenKey 常量定义）
  *  - 也兼容旧的 localStorage / sessionStorage 写法
  */
-function getUserIdFromToken(): number | null {
+export function getUserIdFromToken(): number | null {
   // 1) Cookies 中查找（项目当前实现，参见 src/utils/auth.ts）
   try {
     const cookieToken = document.cookie
@@ -66,14 +66,16 @@ function getUserIdFromToken(): number | null {
 
   // 2) localStorage / sessionStorage 兼容
   for (const storage of [localStorage, sessionStorage]) {
-    for (const key of ["pure-user-token", "authorized-token"]) {
+    for (const key of ["pure-user-token", "authorized-token", "user-info"]) {
       const raw = storage.getItem(key);
       if (!raw) continue;
       try {
         // 可能就是 token 字符串，也可能是 JSON 包装
         const tokenStr = raw.startsWith("{") ? JSON.parse(raw)?.accessToken ?? raw : raw;
-        const payload = JSON.parse(atob(tokenStr.split(".")[1]));
-        if (payload?.user_id) return payload.user_id;
+        if (tokenStr.includes(".")) {
+          const payload = JSON.parse(atob(tokenStr.split(".")[1]));
+          if (payload?.user_id) return payload.user_id;
+        }
       } catch {
         // ignore
       }

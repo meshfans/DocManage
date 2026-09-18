@@ -40,7 +40,7 @@ const onConfirm = (blob: Blob) => {
     :preview-size="380"
     :show-guide-grid="true"
     :rounded-crop="true"
-    :min-scale="0.5"
+    :min-scale="0.1"
     :max-scale="3"
     :bound-to-crop="true"
     @confirm="onConfirm"

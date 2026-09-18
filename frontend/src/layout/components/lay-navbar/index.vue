@@ -28,8 +28,9 @@ import { uploadAvatar } from "@/api/user_extended";
 import { PASSWORD_MIN, PASSWORD_MAX, validatePasswordStrength } from "@/utils/password";
 import { isDocClient } from "@/utils/isDocClient";
 import { bridgeCall } from "@/utils/docClientBridge";
-import { refreshNavAvatar } from "@/layout/hooks/useNav";
+import { refreshNavAvatar, getUserIdFromToken } from "@/layout/hooks/useNav";
 import AvatarCropper from "@/components/AvatarCropper/index.vue";
+import { useUserStoreHook } from "@/store/modules/user";
 
 const {
   layout,
@@ -100,50 +101,31 @@ const closeChangePassword = () => {
 
 // ==================== 修改头像 ====================
 const avatarUploading = ref(false);
-const currentUserId = ref<number | null>(null);
 const avatarCropperRef = ref();
 
-// 点击"修改头像" - 直接打开文件选择器（弹出系统文件选择）
-const openChangeAvatar = async () => {
-  // 确保拿到 userId（裁剪完成后需要）
-  if (!currentUserId.value) {
-    try {
-      const res: any = await getUserInfo();
-      if (res?.success && res.data?.id) {
-        currentUserId.value = res.data.id;
-      }
-    } catch (e) {
-      console.error("[avatar] failed to get user info", e);
-    }
-  }
-  // 触发 AvatarCropper 内置的文件选择
+// 点击"修改头像" - 直接打开文件选择器
+const openChangeAvatar = () => {
   avatarCropperRef.value?.open();
 };
 
 // 裁剪确认后上传
 const handleCropConfirm = async (blob: Blob) => {
-  if (!currentUserId.value) {
-    try {
-      const res: any = await getUserInfo();
-      if (res?.success && res.data?.id) {
-        currentUserId.value = res.data.id;
-      } else {
-        ElMessage.error("获取用户信息失败");
-        return;
-      }
-    } catch (e) {
-      ElMessage.error("获取用户信息失败");
-      return;
-    }
+  // 从 token 直接解析 userId，避免额外 API 调用
+  const userId = getUserIdFromToken();
+  if (!userId) {
+    ElMessage.error("无法获取用户信息，请重新登录");
+    return;
   }
 
   avatarUploading.value = true;
   try {
     // blob 转 File
     const file = new File([blob], "avatar.webp", { type: "image/webp" });
-    const res: any = await uploadAvatar(currentUserId.value, file);
+    const res: any = await uploadAvatar(userId, file);
     if (res?.success) {
-      // 不写 store，直接调用 GET /api/users/:id/avatar 拉取最新头像 blob URL
+      // 更新 store 中的 avatar 路径，触发 blob URL 刷新
+      const newAvatar = res.data?.avatar || `avatar/${userId}.webp`;
+      useUserStoreHook().SET_AVATAR(newAvatar);
       await refreshNavAvatar();
       ElMessage.success("头像上传成功");
     } else {
@@ -252,7 +234,8 @@ function onResetTarget() {
 }
 
 onMounted(() => {
-  // 默认隐藏，不主动拉取；用户点击眼睛图标才显示并拉取
+  // 首次加载时刷新头像（确保 blob URL 被加载）
+  refreshNavAvatar();
 });
 
 // ==================== 后退 / 前进 ====================

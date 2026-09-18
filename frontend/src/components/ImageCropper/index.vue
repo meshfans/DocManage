@@ -17,7 +17,9 @@ const props = withDefaults(defineProps<CropperOptions>(), {
   maxSize: 5 * 1024 * 1024,
   accept: "image/*",
   aspectRatio: 0,
-  backgroundColor: '#1f2329',
+  // canvas 底色用半透明黑（≈80% 不透明），rounded 模式下这里就是"圆外的背景色"
+  // 非 rounded 模式下，会再叠 maskColor 形成更强的对比（≈90% 黑）
+  backgroundColor: 'rgba(0, 0, 0, 0.85)',
   maskColor: 'rgba(0, 0, 0, 0.5)',
   borderColor: '#409eff',
   guideColor: 'rgba(255, 255, 255, 0.4)',
@@ -132,83 +134,64 @@ const onFileChange = (e: Event) => {
 const draw = () => {
   const canvas = canvasRef.value;
   const image = img.value;
-  if (!canvas || !image) return;
+  if (!canvas) return;
 
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   const size = props.previewSize ?? 380;
   const crop = cropRegion.value;
   const rounded = props.roundedCrop ?? false;
 
-  // 清空，画背景
-  ctx.fillStyle = props.backgroundColor ?? '#1f2329';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // 1. 清空 canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 保存状态
-  ctx.save();
+  if (!image) {
+    // 没图片时直接填半透黑底色（让 dialog 看起来一致）
+    ctx.fillStyle = props.backgroundColor ?? 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
 
-  // 移动到中心
+  // 2. 完整绘制原图（不 clip）— 让 canvas 上能看到完整图片内容
   const centerX = size / 2;
   const centerY = size / 2;
+  ctx.save();
   ctx.translate(centerX, centerY);
-
-  // 应用旋转
   if (imgRotation.value !== 0) {
     ctx.rotate((imgRotation.value * Math.PI) / 180);
   }
-
-  // 计算图片尺寸
   const w = image.width * imgScale.value;
   const h = image.height * imgScale.value;
   const x = -w / 2 + imgOffset.value.x;
   const y = -h / 2 + imgOffset.value.y;
-
-  // 圆形裁剪
-  if (rounded) {
-    const radius = Math.min(crop.width, crop.height) / 2;
-    const cx = crop.x + crop.width / 2;
-    const cy = crop.y + crop.height / 2;
-    ctx.beginPath();
-    ctx.arc(cx - centerX, cy - centerY, radius, 0, Math.PI * 2);
-    ctx.clip();
-  }
-
-  // 绘制图片
   ctx.drawImage(image, x, y, w, h);
-
-  // 恢复状态
   ctx.restore();
 
-  // 绘制遮罩
+  // 3. 在"裁剪区外"叠加一层 maskColor（半透黑），dialog 白底透过半透黑≈深灰偏黑，能看到原图外圈
+  //    rounded 用 evenodd 路径做减法，矩形用四条边
   ctx.fillStyle = props.maskColor ?? 'rgba(0, 0, 0, 0.5)';
-  
   if (rounded) {
-    // 圆形遮罩
+    // 圆形：用 outer - inner 路径（先画外圈全屏，再挖掉圆内）
     const radius = Math.min(crop.width, crop.height) / 2;
     const cx = crop.x + crop.width / 2;
     const cy = crop.y + crop.height / 2;
-    
-    ctx.fillStyle = props.maskColor ?? 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
     ctx.rect(0, 0, size, size);
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2, true);
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2, true); // 反向（hole）
     ctx.fill();
   } else {
-    // 上
-    ctx.fillRect(0, 0, size, crop.y);
-    // 下
-    ctx.fillRect(0, crop.y + crop.height, size, size - crop.y - crop.height);
-    // 左
-    ctx.fillRect(0, crop.y, crop.x, crop.height);
-    // 右
-    ctx.fillRect(crop.x + crop.width, crop.y, size - crop.x - crop.width, crop.height);
+    // 矩形：上下左右四个矩形条
+    ctx.fillRect(0, 0, size, crop.y);                                 // 上
+    ctx.fillRect(0, crop.y + crop.height, size, size - crop.y - crop.height); // 下
+    ctx.fillRect(0, crop.y, crop.x, crop.height);                     // 左
+    ctx.fillRect(crop.x + crop.width, crop.y, size - crop.x - crop.width, crop.height); // 右
   }
 
-  // 绘制裁剪框边框
+  // 4. 绘制裁剪框边框
   ctx.strokeStyle = props.borderColor ?? '#409eff';
   ctx.lineWidth = 2;
-  
+
   if (rounded) {
     const radius = Math.min(crop.width, crop.height) / 2;
     const cx = crop.x + crop.width / 2;
@@ -460,7 +443,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #fafafa;
   border-radius: 4px;
   padding: 10px;
 }

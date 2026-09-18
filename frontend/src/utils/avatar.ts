@@ -14,15 +14,17 @@ import LogoAsset from "@/assets/logo.png";
 import { fetchUserAvatar as apiFetchUserAvatar } from "@/api/user_extended";
 
 /**
- * 检查是否是用户头像路径（uploads/avatar/{id}.{ext}）
+ * 检查是否是用户头像路径（avatar/{id}.{ext} 或 uploads/avatar/{id}.{ext}）
  */
 export function isUserAvatar(avatar: string | null | undefined): boolean {
   if (!avatar) return false;
-  return /^uploads[/\\]avatar[/\\]\d+\.\w+$/i.test(avatar);
+  return /^(uploads[/\\])?avatar[/\\]\d+\.\w+$/i.test(avatar);
 }
 
 /**
  * 同步解析 avatar 路径（用于获取原始路径）
+ * 注意：用户头像路径（avatar/xxx.webp）不直接作为 src 返回，
+ *       而是由 loadAvatar() 加载 blob URL 后显示，避免刷新时先显示破碎图片
  */
 export function resolveAvatarPath(avatar: string | null | undefined): string {
   if (!avatar || avatar.trim() === "") {
@@ -30,6 +32,10 @@ export function resolveAvatarPath(avatar: string | null | undefined): string {
   }
   if (avatar === "logo.png") {
     return LogoAsset;
+  }
+  // 用户头像路径由 blob URL 处理，这里返回默认头像
+  if (isUserAvatar(avatar)) {
+    return DefaultAvatar;
   }
   return avatar;
 }
