@@ -5,6 +5,8 @@ import (
 
 	"doc/database"
 	"doc/services/llm"
+
+	_ "doc/services/llm/modules" // 导入以触发 init() 注册
 )
 
 // InitLLMService 初始化 LLM 服务

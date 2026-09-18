@@ -759,6 +759,24 @@ func createTables() error {
 	    updated_at              INTEGER NOT NULL DEFAULT (strftime('%s','now')),
 	    deleted_at              INTEGER
 	);
+
+	-- LLM 审计日志表
+	CREATE TABLE IF NOT EXISTS llm_audit_log (
+	    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	    user_id         INTEGER NOT NULL,
+	    module          TEXT    NOT NULL,
+	    intent          TEXT    DEFAULT '',
+	    template        TEXT    DEFAULT '',
+	    input_tokens    INTEGER NOT NULL DEFAULT 0,
+	    output_tokens   INTEGER NOT NULL DEFAULT 0,
+	    total_tokens    INTEGER NOT NULL DEFAULT 0,
+	    latency_ms      INTEGER NOT NULL DEFAULT 0,
+	    model          TEXT    DEFAULT '',
+	    scene          TEXT    DEFAULT '',
+	    status         TEXT    NOT NULL DEFAULT 'ok',
+	    error_msg      TEXT    DEFAULT '',
+	    created_at      INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
 	`
 	if _, err := DB.Exec(query); err != nil {
 		return err
@@ -861,6 +879,11 @@ func createIndexes() error {
 		// AI 配置索引
 		`CREATE INDEX IF NOT EXISTS idx_ai_config_status ON ai_config(status) WHERE deleted_at IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_ai_config_default ON ai_config(is_default) WHERE deleted_at IS NULL`,
+
+		// LLM 审计日志索引
+		`CREATE INDEX IF NOT EXISTS idx_llm_audit_user ON llm_audit_log(user_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_llm_audit_module ON llm_audit_log(module, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_llm_audit_status ON llm_audit_log(status, created_at DESC)`,
 	}
 	for _, idx := range indexes {
 		if _, err := DB.Exec(idx); err != nil {

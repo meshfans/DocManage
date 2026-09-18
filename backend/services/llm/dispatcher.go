@@ -82,11 +82,10 @@ type Module interface {
 	Intent() []string // 识别的意图关键词
 }
 
-// RecognizeIntent 意图识别
+// RecognizeIntent 意图识别（统一使用 summarizer 做智能路由）
 func (d *Dispatcher) RecognizeIntent(text string) string {
 	intentKeywords := map[string][]string{
-		"summarize": {"总结", "摘要", "概括", "提炼"},
-		"generate":  {"写", "生成", "创建"},
+		"summarizer": {"总结", "摘要", "概括", "提炼", "写", "生成", "创建", "分析", "研究"},
 	}
 	text = strings.ToLower(text)
 	for intent, keywords := range intentKeywords {
@@ -109,18 +108,18 @@ func (d *Dispatcher) Dispatch(ctx context.Context, req Request) (*Response, erro
 		moduleName = d.RecognizeIntent(req.Input)
 		// unknown 时使用默认的 summarizer
 		if moduleName == "unknown" {
-			moduleName = "summarize"
+			moduleName = "summarizer"
 		}
 	}
 
 	// 1. 获取模块（使用默认 summarizer）
 	module, ok := d.modules[moduleName]
 	if !ok {
-		module, ok = d.modules["summarize"] // 兜底
+		module, ok = d.modules["summarizer"] // 兜底
 		if !ok {
 			return nil, ErrModuleNotFound
 		}
-		moduleName = "summarize"
+		moduleName = "summarizer"
 	}
 
 	// 2. 防护脱敏
@@ -166,7 +165,7 @@ func (d *Dispatcher) DispatchStream(ctx context.Context, req Request) (<-chan mo
 		moduleName = d.RecognizeIntent(req.Input)
 		// unknown 时使用默认的 summarizer
 		if moduleName == "unknown" {
-			moduleName = "summarize"
+			moduleName = "summarizer"
 		}
 	}
 
@@ -176,14 +175,14 @@ func (d *Dispatcher) DispatchStream(ctx context.Context, req Request) (<-chan mo
 	// 2. 获取模块（使用默认 summarizer）
 	module, ok := d.modules[moduleName]
 	if !ok {
-		module, ok = d.modules["summarize"] // 兜底
+		module, ok = d.modules["summarizer"] // 兜底
 		if !ok {
 			ch := make(chan models.StreamChunk, 1)
 			ch <- models.StreamChunk{Error: ErrModuleNotFound}
 			close(ch)
 			return ch, nil
 		}
-		moduleName = "summarize"
+		moduleName = "summarizer"
 	}
 
 	// 3. 执行流式
@@ -228,6 +227,10 @@ func (d *Dispatcher) DispatchStream(ctx context.Context, req Request) (<-chan mo
 
 // ExecuteModule 直接执行指定模块
 func (d *Dispatcher) ExecuteModule(ctx context.Context, moduleName string, req Request) (*Response, error) {
+	// 空字符串时使用默认模块
+	if moduleName == "" {
+		moduleName = "summarizer"
+	}
 	module, ok := d.modules[moduleName]
 	if !ok {
 		return nil, ErrModuleNotFound
@@ -265,6 +268,10 @@ func (d *Dispatcher) ExecuteModule(ctx context.Context, moduleName string, req R
 
 // ExecuteModuleStream 执行指定模块（流式）
 func (d *Dispatcher) ExecuteModuleStream(ctx context.Context, moduleName string, req Request) (<-chan models.StreamChunk, error) {
+	// 空字符串时使用默认模块
+	if moduleName == "" {
+		moduleName = "summarizer"
+	}
 	module, ok := d.modules[moduleName]
 	if !ok {
 		ch := make(chan models.StreamChunk, 1)
