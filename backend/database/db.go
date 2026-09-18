@@ -138,6 +138,11 @@ func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 		return fmt.Errorf("种子提醒模板失败: %w", err)
 	}
 
+	// AI 配置种子（4 条默认服务商配置）
+	if err = SeedAIConfigs(); err != nil {
+		return fmt.Errorf("种子 AI 配置失败: %w", err)
+	}
+
 	return nil
 }
 
