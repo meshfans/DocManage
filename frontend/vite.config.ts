@@ -40,7 +40,7 @@ export default ({ mode }: ConfigEnv): UserConfigExport => {
               changeOrigin: true
             },
             // WebSocket 透传：Vite 默认只代理 HTTP，需显式声明 ws: true + http→ws 协议替换。
-            // VITE_PROXY_TARGET 形如 http://127.0.0.1:8091，正则把 http 替换为 ws 后变 ws://127.0.0.1:8091；
+            // VITE_PROXY_TARGET 形如 http://127.0.0.1:8090，正则把 http 替换为 ws 后变 ws://127.0.0.1:8090；
             // 同理 https → wss。/api/ws 比 /api 更具体，所以即使 /api 在前也会优先匹配此条。
             "/api/ws": {
               target: VITE_PROXY_TARGET.replace(/^http/, "ws"),

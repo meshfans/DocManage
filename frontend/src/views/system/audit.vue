@@ -2,7 +2,7 @@
 /**
  * 审计日志查询 UI（admin only）
  *
- * 参考 D:\Code\APP\DocManage\front\src\views\system\audit.vue 完善：
+ * 参考 F:\Code\DocManageTrail\frontend\src\views\system\audit.vue 完善：
  *   - AUDIT_DICT 集中字典：12 种 target_type × 分级 tag 色 × 各类型 action 全集
  *   - 统计卡（按类型实时统计本页数量）
  *   - 链状态徽章 + 验证结果 Alert 横幅

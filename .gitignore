@@ -1,6 +1,7 @@
 # ==================== Build artifacts ====================
 # Release output
 /dist/
+.pnpm*/
 
 # Backend (Go) build outputs
 /backend/bin/doc-server.exe

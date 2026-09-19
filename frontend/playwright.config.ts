@@ -23,7 +23,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  *   pnpm test:e2e:auth    仅跑登录相关
  *   pnpm test:e2e:report  查看 HTML 报告
  */
-const PORT = Number(process.env.E2E_PORT ?? 18848);
+const PORT = Number(process.env.E2E_PORT ?? 18090);
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? "http://localhost:8090";
 

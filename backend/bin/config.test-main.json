@@ -1,7 +1,7 @@
 {
   "server": {
     "host": "0.0.0.0",
-    "port": "8091",
+    "port": "8090",
     "domain": "192.168.31.88",
     "enable_ssl": false,
     "ssl_cert": "./bin/certs/public.pem",

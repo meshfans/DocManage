@@ -281,13 +281,13 @@ cd backend
 .\run.ps1
 ```
 
-`run.ps1` 会：1) 杀掉占用 8091 端口的旧进程；2) 设置 `CONFIG_FILE=bin/config.test-main.json`；3) 执行 `go run ./main.go`。
+`run.ps1` 会：1) 杀掉占用 8090 端口的旧进程；2) 设置 `CONFIG_FILE=bin/config.test-main.json`；3) 执行 `go run ./main.go`。
 
 **端口与配置**：
 
 | 项 | 值 |
 |----|----|
-| 监听地址 | `0.0.0.0:8091`（**非生产 8090**）|
+| 监听地址 | `0.0.0.0:8090`（**非生产 8090**）|
 | 配置文件 | `backend/bin/config.test-main.json` |
 | 数据库文件 | `backend/bin/data/doc.db` |
 | 上传 / WORM / 日志 / 备份 | `backend/bin/{uploads,uploads/worm,logs,backups}/` |
@@ -321,16 +321,16 @@ pnpm dev
 
 ```bash
 # 后端健康
-curl http://localhost:8091/health
+curl http://localhost:8090/health
 # {"status":"healthy","service":"doc-server","version":"1.0.0"}
 
 # 登录
-curl -X POST http://localhost:8091/api/login \
+curl -X POST http://localhost:8090/api/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}'
 
 # 用 token 访问三方合同列表
-curl http://localhost:8091/api/third-party/contracts \
+curl http://localhost:8090/api/third-party/contracts \
   -H "Authorization: Bearer <access_token>"
 ```
 

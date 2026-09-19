@@ -4,7 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File backend/scripts/metrics_check.ps1
 #
 # Pre-req:
-#   - Backend running via backend/run.ps1 on :8091
+#   - Backend running via backend/run.ps1 on :8090
 #
 # Output:
 #   - Console PASS/FAIL summary
@@ -12,7 +12,7 @@
 #   - backend/scripts/metrics_check_<ts>.csv (results table)
 
 $ErrorActionPreference = 'Continue'
-$baseUrl  = 'http://localhost:8091'
+$baseUrl  = 'http://localhost:8090'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $OutDir   = $PSScriptRoot
 $ts       = Get-Date -Format 'yyyyMMdd_HHmmss'
