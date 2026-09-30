@@ -487,21 +487,27 @@ func (h *UserExtendedHandler) GetAvatar(c *gin.Context) {
 // 仅本人或管理员可操作。
 func (h *UserExtendedHandler) UploadAvatar(c *gin.Context) {
 	idStr := c.Param("id")
-	userID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		utils.BadRequest(c, "无效的用户ID")
-		return
+	currentUserID := c.GetInt64("user_id")
+
+	// 支持 id="me" 表示当前登录用户本人
+	targetUserID := currentUserID
+	if idStr != "me" {
+		var err error
+		targetUserID, err = strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			utils.BadRequest(c, "无效的用户ID")
+			return
+		}
 	}
 
 	// 权限校验：本人或管理员
-	currentUserID := c.GetInt64("user_id")
-	if !IsAdminUser(c) && currentUserID != userID {
+	if !IsAdminUser(c) && currentUserID != targetUserID {
 		utils.Err(c, utils.CodeForbidden, "只能修改自己的头像")
 		return
 	}
 
 	// 用户存在性校验
-	user, err := database.GetUserByID(userID)
+	user, err := database.GetUserByID(targetUserID)
 	if err != nil || user == nil {
 		utils.Err(c, utils.CodeNotFound, "用户不存在")
 		return
@@ -548,7 +554,17 @@ func (h *UserExtendedHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	avatarPath := filepath.Join(avatarDir, fmt.Sprintf("%d%s", userID, ext))
+	// 旧扩展名文件清理（png → webp 覆盖时避免堆积）
+	if user.Avatar != "" {
+		if oldExt := strings.ToLower(filepath.Ext(user.Avatar)); oldExt != "" && oldExt != ext {
+			oldPath := filepath.Join(avatarDir, fmt.Sprintf("%d%s", targetUserID, oldExt))
+			if _, statErr := os.Stat(oldPath); statErr == nil {
+				os.Remove(oldPath)
+			}
+		}
+	}
+
+	avatarPath := filepath.Join(avatarDir, fmt.Sprintf("%d%s", targetUserID, ext))
 	if err := os.WriteFile(avatarPath, data, 0644); err != nil {
 		utils.Err(c, utils.CodeInternal, "保存头像失败")
 		return
@@ -556,8 +572,8 @@ func (h *UserExtendedHandler) UploadAvatar(c *gin.Context) {
 
 	// 更新数据库（相对 Upload.Dir 的路径，不再含 "uploads" 前缀）
 	// 例：Upload.Dir = "./bin/uploads/" → DB 存 "avatar/1.webp"（前端已导出 webp）
-	relativePath := filepath.Join("avatar", fmt.Sprintf("%d%s", userID, ext))
-	if err := database.UpdateUserAvatar(userID, relativePath); err != nil {
+	relativePath := filepath.Join("avatar", fmt.Sprintf("%d%s", targetUserID, ext))
+	if err := database.UpdateUserAvatar(targetUserID, relativePath); err != nil {
 		// 清理文件
 		os.Remove(avatarPath)
 		utils.Err(c, utils.CodeInternal, "更新头像失败")
@@ -565,7 +581,7 @@ func (h *UserExtendedHandler) UploadAvatar(c *gin.Context) {
 	}
 
 	// 审计
-	database.RecordAudit(c, database.AuditTargetRBACUserBinding, userID, "avatar.update", gin.H{})
+	database.RecordAudit(c, database.AuditTargetRBACUserBinding, targetUserID, "avatar.update", gin.H{})
 
 	utils.Success(c, gin.H{
 		"avatar":  relativePath,

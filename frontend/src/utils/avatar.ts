@@ -51,3 +51,10 @@ export async function fetchUserAvatarUrl(
     return null;
   }
 }
+
+/**
+ * 清除头像缓存（保留接口兼容）
+ */
+export function clearAvatarCache(): void {
+  // 现在头像 URL 不再缓存，调用方自己管理 revoke
+}

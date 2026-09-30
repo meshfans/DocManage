@@ -93,6 +93,8 @@ func seedRoles() error {
 				"media:file", "media:thumb", "media:upload",
 				"media:check-hash", "media:verify",
 				"user:list", "user:detail", "user:check-username", "user:by-department", "user:info",
+				// 2026-09-30 头像对齐 P1：补全权限码：头像读写（保持既有功能不回退）
+				"user:avatar:get", "user:avatar:upload",
 				"dept:list", "dept:detail", "dept:users",
 				"permission:version:query",
 			}),
@@ -119,6 +121,8 @@ func seedRoles() error {
 				"user:info", // assertCommonHasUserInfo 不变式强依赖
 				"user:change-password",
 				"user:logout",
+				// 2026-09-30 头像对齐 P1：补全头像读写权限码（个人设置能力）
+				"user:avatar:get", "user:avatar:upload",
 			}),
 			dataScope: "self", // common 看自己（默认）
 			isSystem:  true,
@@ -230,6 +234,9 @@ func buildPermissionSeeds() []permSeed {
 		p("user:info", "我的信息", "user", "/api/user/info", "GET"),
 		p("user:logout", "登出", "user", "/api/logout", "POST"),
 		p("user:change-password", "改密", "user", "/api/change-password", "POST"),
+		// 2026-09-30 头像对齐 P1：头像读写（此前未配 permission code，APIGate 放行）
+		p("user:avatar:get", "读取用户头像", "user", "/api/users/:id/avatar", "GET"),
+		p("user:avatar:upload", "上传用户头像", "user", "/api/users/:id/avatar", "POST"),
 
 		// === customer ===
 		p("customer:list", "客户列表", "customer", "/api/customer/list", "GET"),
