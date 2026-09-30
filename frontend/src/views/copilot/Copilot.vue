@@ -375,10 +375,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .copilot-fab {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
-  width: 48px;
-  height: 48px;
+  right: 40px;
+  bottom: 90px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--el-color-primary);
   color: #fff;
@@ -398,8 +398,8 @@ onBeforeUnmount(() => {
 
 .copilot-panel {
   position: fixed;
-  right: 24px;
-  bottom: 88px;
+  right: 40px;
+  bottom: 140px;
   width: 380px;
   height: 520px;
   background: var(--el-bg-color);
