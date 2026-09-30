@@ -10,6 +10,21 @@ import {
 } from "@/api/system_config";
 import { useIsAdmin } from "@/composables/useIsAdmin";
 import { hasPerms } from "@/utils/auth";
+import { useAppStore } from "@/store/modules/app";
+
+const appStore = useAppStore();
+
+// 2026-09-30 对齐 DocCRM（2026-09-23 P0）：运行模式仅供查看，不允许在 UI 修改。
+// 体验模式（experience）通过 ExperienceReadOnly 中间件拦截业务写请求，
+// 若允许 admin 在此处切换为正常模式即可绕过拦截。
+// 本项目后端 SaveConfigFile 早已不回写 Database.Mode（只有磁盘 config.json 能改），
+// 此前这里仍是可编辑下拉框：选了「体验模式」保存后返回「保存成功」但实际毫无变化，
+// 属于误导性死控件，故一并改为只读。
+// 修改路径：编辑 config.json 的 database.mode 字段后重启服务 / 用 DB_MODE env 覆盖。
+const experienceModeLabel = computed(() =>
+  appStore.isExperienceMode ? "体验模式（experience，只读）" : "正常模式"
+);
+const experienceModeTagType = computed(() => (appStore.isExperienceMode ? "warning" : "info"));
 
 defineOptions({ name: "SystemConfig" });
 
@@ -556,33 +571,12 @@ onMounted(() => {
             <el-form-item label="数据库路径"
               ><el-input v-model="configFile.database.path"
             /></el-form-item>
+            <!-- 2026-09-30 对齐 DocCRM（2026-09-23 P0）：运行模式已下线为只读。
+                  体验模式若可在此切换为正常模式即可绕过 ExperienceReadOnly 拦截。
+                  如需切换，请编辑磁盘 config.json 的 database.mode 字段后重启服务；
+                  环境变量 DB_MODE 仍可覆盖。 -->
             <el-form-item label="运行模式">
-              <el-select v-model="configFile.database.mode" placeholder="正常模式">
-                <el-option label="正常（空/development/test/production）" value="" />
-                <el-option
-                  label="体验模式（experience，只读，拦截业务写请求）"
-                  value="experience"
-                >
-                  <span style="float: left">体验模式</span>
-                  <span
-                    style="
-                      float: right;
-                      color: #e6a23c;
-                      font-size: 12px;
-                      font-weight: 600;
-                    "
-                    >experience</span
-                  >
-                </el-option>
-              </el-select>
-              <div class="form-tip">
-                <el-tag v-if="configFile.database.mode === 'experience'" type="warning" size="small"
-                  >体验模式：所有业务写操作会被后端拦截返回 423，前端顶部出现横幅</el-tag
-                >
-                <span v-else style="color: #909399">
-                  环境变量 <code>DB_MODE</code> 非空时覆盖文件此项配置（env 优先）。
-                </span>
-              </div>
+              <el-tag :type="experienceModeTagType" size="small">{{ experienceModeLabel }}</el-tag>
             </el-form-item>
             <el-divider content-position="left">上传配置</el-divider>
             <el-form-item label="上传目录"
