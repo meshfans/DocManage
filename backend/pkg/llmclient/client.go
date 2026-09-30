@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -57,13 +58,33 @@ func NewClient(cfg *Config) Client {
 
 	return &HTTPClient{
 		config:      cfg,
-		httpClient: &http.Client{
-			Timeout: time.Duration(cfg.TimeoutMs) * time.Millisecond,
-		},
+		httpClient:  newHTTPClient(cfg.ProxyURL, time.Duration(cfg.TimeoutMs)*time.Millisecond),
 		provider:    provider,
 		authType:    authType,
 		defaultPath: path,
 	}
+}
+
+// newHTTPClient 按是否配置代理创建 HTTP 客户端
+//
+// 2026-09-30 对齐 DocCRM 修复：此前 Config.ProxyURL 只被声明和传递，
+// 从未真正挂到 http.Transport 上——用户在 AI 配置页填的代理被静默忽略，
+// 出内网的部署会直连失败。此处对非空 ProxyURL 解析后挂 http.Transport.Proxy。
+// 解析失败时降级为直连（不阻断主流程）。
+func newHTTPClient(proxyURL string, timeout time.Duration) *http.Client {
+	if strings.TrimSpace(proxyURL) == "" {
+		return &http.Client{Timeout: timeout}
+	}
+
+	proxy, err := url.Parse(proxyURL)
+	if err != nil || proxy.Host == "" {
+		fmt.Printf("[llmclient] proxy_url 解析失败，本次直连: %q\n", proxyURL)
+		return &http.Client{Timeout: timeout}
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxy)
+	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
 // AuthType 获取配置的认证类型
@@ -241,6 +262,34 @@ func (c *HTTPClient) ChatStream(ctx context.Context, req *ChatRequest) (<-chan S
 		return c.chatStreamOllama(ctx, req)
 	default:
 		return c.chatStreamOpenAI(ctx, req)
+	}
+}
+
+// Embeddings 实现 Client 接口
+//
+// 2026-09-30 对齐 DocCRM 移植。按 provider 分发：
+//   - OpenAI / DeepSeek / Qwen / Kimi / Doubao / SiliconFlow / Custom → embeddingOpenAI
+//   - Ollama → embeddingOllama（端点 /api/embeddings 不同）
+//   - Anthropic / Google / Zhipu / MiniMax → ErrEmbeddingUnsupported（明确报错）
+func (c *HTTPClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	switch c.provider {
+	case ProviderOpenAI, ProviderDeepSeek, ProviderQwen, ProviderKimi, ProviderDoubao, ProviderSiliconFlow, ProviderCustom:
+		return c.embeddingOpenAI(ctx, req)
+	case ProviderOllama:
+		return c.embeddingOllama(ctx, req)
+	case ProviderAnthropic:
+		return c.embeddingAnthropic(ctx, req)
+	case ProviderGoogle:
+		return c.embeddingGoogle(ctx, req)
+	case ProviderZhipu:
+		// 智谱 GLM 提供独立的 embeddings API（/api/paas/v4/embeddings），
+		// 但端点格式与 OpenAI 不完全一致；本期 P0 不接入，预留为 ErrEmbeddingUnsupported。
+		return nil, ErrEmbeddingUnsupported
+	case ProviderMiniMax:
+		// MiniMax 当前未对外公开 embeddings endpoint；同 Anthropic 明确报错。
+		return nil, ErrEmbeddingUnsupported
+	default:
+		return nil, ErrEmbeddingUnsupported
 	}
 }
 

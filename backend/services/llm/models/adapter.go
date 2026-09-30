@@ -3,12 +3,17 @@ package models
 import "fmt"
 
 // ModelConfig 模型配置（避免循环引用）
+//
+// APIPath / ProxyURL 必须完整透传到 llmclient.Config，否则用户在 AI 配置页
+// 填写的自定义路径与代理会在运行时被静默丢弃（表现为「测试通过但实际对话打错 URL」）。
 type ModelConfig struct {
 	Provider  string
 	Protocol  string
 	ModelName string
 	APIKey    string
 	APIBase   string
+	APIPath   string
+	ProxyURL  string
 }
 
 // NewModel 根据配置自动选择适配器（使用统一 llmclient）

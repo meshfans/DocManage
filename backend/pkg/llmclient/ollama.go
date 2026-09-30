@@ -3,6 +3,7 @@ package llmclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 )
 
@@ -151,4 +152,54 @@ func parseOllamaStream(body io.Reader) <-chan StreamChunk {
 	}()
 
 	return ch
+}
+
+// embeddingOllama Ollama 向量嵌入
+//
+// 2026-09-30 对齐 DocCRM 移植。
+// 入参：单条 prompt → 单条 embedding
+//   - 若 req.Input 包含多条 → 循环调用 Ollama（Ollama 原生 embed 不支持 batch）
+//   - 返回顺序与 req.Input 顺序一致
+//
+// Ollama 不返回 token 用量（本地推理）；EmbeddingUsage 字段全 0。
+func (c *HTTPClient) embeddingOllama(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	if len(req.Input) == 0 {
+		return nil, &APIError{Code: -1, Message: "embedding input empty"}
+	}
+
+	out := &EmbeddingResponse{
+		Model: c.config.ModelName,
+		Data:  make([]Embedding, 0, len(req.Input)),
+		Usage: &EmbeddingUsage{},
+	}
+
+	url := c.buildURL("/api/embeddings")
+	for i, text := range req.Input {
+		payload := map[string]any{
+			"model":  c.config.ModelName,
+			"prompt": text,
+		}
+
+		respBody, statusCode, err := c.sendRequest(ctx, "POST", url, payload)
+		if err != nil {
+			return nil, fmt.Errorf("ollama embedding (index=%d): %w", i, err)
+		}
+
+		if statusCode < 200 || statusCode >= 300 {
+			return nil, &APIError{Code: statusCode, Message: string(respBody)}
+		}
+
+		var resp struct {
+			Embedding []float64 `json:"embedding"`
+		}
+		if err := json.Unmarshal(respBody, &resp); err != nil {
+			return nil, fmt.Errorf("decode ollama embedding (index=%d): %w", i, err)
+		}
+
+		out.Data = append(out.Data, Embedding{
+			Index:     i,
+			Embedding: resp.Embedding,
+		})
+	}
+	return out, nil
 }

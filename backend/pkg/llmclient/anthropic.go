@@ -327,6 +327,11 @@ func parseAnthropicStream(body io.Reader) <-chan StreamChunk {
 		defer close(ch)
 		reader := bufio.NewReader(body)
 
+		// 2026-09-30 对齐 DocCRM 修复：Anthropic 协议的 input_tokens 只在
+		// message_start（message.usage.input_tokens）下发，message_delta 只带
+		// output_tokens。原实现只读 message_delta，导致 prompt token 恒为 0。
+		inputTokens := 0
+
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
@@ -386,6 +391,18 @@ func parseAnthropicStream(body io.Reader) <-chan StreamChunk {
 						ch <- StreamChunk{Delta: event.Text}
 					}
 				}
+			case "message_start":
+				// prompt token 只在这里出现
+				var startEvent struct {
+					Message struct {
+						Usage struct {
+							InputTokens int `json:"input_tokens"`
+						} `json:"usage"`
+					} `json:"message"`
+				}
+				if err := json.Unmarshal([]byte(data), &startEvent); err == nil {
+					inputTokens = startEvent.Message.Usage.InputTokens
+				}
 			case "message_delta":
 				var event struct {
 					Type  string `json:"type"`
@@ -395,12 +412,20 @@ func parseAnthropicStream(body io.Reader) <-chan StreamChunk {
 					} `json:"usage"`
 				}
 				if err := json.Unmarshal([]byte(data), &event); err == nil {
+					// message_delta 只带 output_tokens，input_tokens 取
+					// message_start 的缓存值（部分网关两处都带）
+					in := event.Usage.InputTokens
+					if in == 0 {
+						in = inputTokens
+					} else {
+						inputTokens = in
+					}
 					ch <- StreamChunk{
 						Done: true,
 						Usage: Usage{
-							PromptTokens:     event.Usage.InputTokens,
+							PromptTokens:     in,
 							CompletionTokens: event.Usage.OutputTokens,
-							TotalTokens:      event.Usage.InputTokens + event.Usage.OutputTokens,
+							TotalTokens:      in + event.Usage.OutputTokens,
 						},
 					}
 					return
@@ -416,4 +441,12 @@ func parseAnthropicStream(body io.Reader) <-chan StreamChunk {
 	}()
 
 	return ch
+}
+
+// embeddingAnthropic Anthropic 原生协议向量嵌入
+//
+// 2026-09-30 对齐 DocCRM 移植。Anthropic 未公开 embeddings endpoint，
+// 返回 ErrEmbeddingUnsupported 让上游明确报错，避免静默失败。
+func (c *HTTPClient) embeddingAnthropic(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	return nil, ErrEmbeddingUnsupported
 }

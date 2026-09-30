@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -210,4 +211,79 @@ func convertMessages(req *ChatRequest) []map[string]any {
 	}
 
 	return messages
+}
+
+// embeddingOpenAI OpenAI 兼容协议向量嵌入
+//
+// 2026-09-30 对齐 DocCRM 移植。
+//
+// 覆盖 provider：OpenAI / DeepSeek / Qwen / Kimi / Doubao / SiliconFlow / Custom（OpenAI 兼容）
+// 端点：{base}/embeddings（与 chat /chat/completions 区分；不可走 buildURLWithDefaultPath）
+//
+// OpenAI text-embedding-3-* 支持 dimensions 参数裁剪维度；其余 provider 透传。
+func (c *HTTPClient) embeddingOpenAI(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	if len(req.Input) == 0 {
+		return nil, &APIError{Code: -1, Message: "embedding input empty"}
+	}
+
+	payload := map[string]any{
+		"model": c.config.ModelName,
+		"input": req.Input,
+	}
+
+	// 仅 OpenAI v3 系列支持 dimensions 裁剪（text-embedding-3-small / -large）
+	// 其他 provider 透传若被拒，由服务端返回 4xx；不在客户端拦截。
+	if req.Dimensions > 0 {
+		payload["dimensions"] = req.Dimensions
+	}
+	if req.EncodingFormat != "" {
+		payload["encoding_format"] = req.EncodingFormat
+	}
+	if req.User != "" {
+		payload["user"] = req.User
+	}
+
+	url := c.buildURL("/embeddings")
+	respBody, statusCode, err := c.sendRequest(ctx, "POST", url, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode < 200 || statusCode >= 300 {
+		return nil, &APIError{Code: statusCode, Message: string(respBody)}
+	}
+
+	var resp struct {
+		Model string `json:"model"`
+		Data  []struct {
+			Index     int       `json:"index"`
+			Object    string    `json:"object"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"data"`
+		Usage struct {
+			PromptTokens int `json:"prompt_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, fmt.Errorf("decode embedding response: %w", err)
+	}
+
+	out := &EmbeddingResponse{
+		Model: resp.Model,
+		Data:  make([]Embedding, 0, len(resp.Data)),
+		Usage: &EmbeddingUsage{
+			PromptTokens: resp.Usage.PromptTokens,
+			TotalTokens:  resp.Usage.TotalTokens,
+		},
+	}
+	for _, d := range resp.Data {
+		out.Data = append(out.Data, Embedding{
+			Index:     d.Index,
+			Object:    d.Object,
+			Embedding: d.Embedding,
+		})
+	}
+	return out, nil
 }

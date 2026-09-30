@@ -196,3 +196,11 @@ func parseGoogleStream(body io.Reader) <-chan StreamChunk {
 
 	return ch
 }
+
+// embeddingGoogle Google Generative AI 向量嵌入
+//
+// 2026-09-30 对齐 DocCRM 移植。Google 的 embeddings 走独立端点，
+// 本期 P0 不接入，返回 ErrEmbeddingUnsupported 让上游明确报错，避免静默失败。
+func (c *HTTPClient) embeddingGoogle(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	return nil, ErrEmbeddingUnsupported
+}

@@ -2,49 +2,68 @@ package llm
 
 import (
 	"database/sql"
-	"log"
+	"sync"
 
 	"doc/services/llm/models"
+	"doc/utils"
 )
 
 // Service LLM 服务
+//
+// dispatcher 由 Reload 原子替换；流式请求持有的是替换前那一刻的快照，
+// 因此不会被打断；新请求拿到新 dispatcher 后即可走新默认模型 / Key / api_base。
 type Service struct {
+	mu         sync.RWMutex
+	db         *sql.DB
 	dispatcher *Dispatcher
 }
 
 // NewService 创建 LLM 服务
 func NewService(db *sql.DB) (*Service, error) {
-	// 加载默认模型配置
-	cfg, err := loadDefaultModelConfig(db)
-	if err != nil {
+	svc := &Service{db: db}
+	if err := svc.Reload(); err != nil {
 		return nil, err
+	}
+	return svc, nil
+}
+
+// Reload 重新从 DB 加载默认 AI 配置并重建 dispatcher。
+//
+// 由 AI 配置变更 handler（CreateAIConfig / UpdateAIConfig / UpdateAIConfigKey /
+// DeleteAIConfig / SetDefaultAIConfig）在写完 DB 后调用，使后续 /api/llm/* 请求立即生效。
+// 调用失败仅 warn，不阻塞配置写入。
+func (s *Service) Reload() error {
+	cfg, err := loadDefaultModelConfig(s.db)
+	if err != nil {
+		utils.Warn("[LLM] Reload 加载默认配置失败: %v", err)
+		return err
 	}
 	if cfg == nil {
-		log.Println("[LLM] 未找到默认 AI 配置，请先在系统设置中添加 AI 配置")
-		return &Service{dispatcher: nil}, nil
+		utils.Warn("[LLM] Reload 未找到默认 AI 配置，dispatcher 置 nil")
+		s.mu.Lock()
+		s.dispatcher = nil
+		s.mu.Unlock()
+		return nil
 	}
 
-	// 创建模型适配器
 	model, err := models.NewModel(cfg)
 	if err != nil {
-		return nil, err
+		utils.Warn("[LLM] Reload 创建模型适配器失败: %v", err)
+		return err
 	}
 
-	// 创建防护层 + 数据库审计
 	guard := NewDefaultGuard()
-	if db != nil {
-		guard.SetLogger(NewDBAuditLogger(db))
+	if s.db != nil {
+		guard.SetLogger(NewDBAuditLogger(s.db))
 	}
 
-	// 创建模板引擎
-	templates := GetTemplateEngine()
+	dispatcher := BuildDispatcher(model, guard, GetTemplateEngine())
 
-	// 构建调度器
-	dispatcher := BuildDispatcher(model, guard, templates)
-
-	return &Service{
-		dispatcher: dispatcher,
-	}, nil
+	s.mu.Lock()
+	s.dispatcher = dispatcher
+	s.mu.Unlock()
+	utils.Info("[LLM] Reload 完成: provider=%s model=%s", cfg.Provider, cfg.ModelName)
+	return nil
 }
 
 // loadDefaultModelConfig 从数据库加载默认模型配置
@@ -52,11 +71,12 @@ func loadDefaultModelConfig(db *sql.DB) (*models.ModelConfig, error) {
 	var cfg models.ModelConfig
 
 	err := db.QueryRow(`
-		SELECT provider, protocol, model_name, api_key, api_base
+		SELECT provider, protocol, model_name, api_key, api_base, api_path, proxy_url
 		FROM ai_config
-		WHERE is_default = 1 AND status = 1
+		WHERE is_default = 1 AND status = 1 AND deleted_at IS NULL
 		LIMIT 1
-	`).Scan(&cfg.Provider, &cfg.Protocol, &cfg.ModelName, &cfg.APIKey, &cfg.APIBase)
+	`).Scan(&cfg.Provider, &cfg.Protocol, &cfg.ModelName, &cfg.APIKey, &cfg.APIBase,
+		&cfg.APIPath, &cfg.ProxyURL)
 
 	if err == sql.ErrNoRows {
 		return nil, nil // 没有默认配置
@@ -68,8 +88,10 @@ func loadDefaultModelConfig(db *sql.DB) (*models.ModelConfig, error) {
 	return &cfg, nil
 }
 
-// GetDispatcher 获取调度器
+// GetDispatcher 获取当前 dispatcher 快照
 func (s *Service) GetDispatcher() *Dispatcher {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.dispatcher
 }
 

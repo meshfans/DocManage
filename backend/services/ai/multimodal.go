@@ -1,11 +1,25 @@
 package ai
 
 import (
+	"context"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"doc/pkg/llmclient"
 )
+
+// MultimodalProber 多模态探测所需的最小接口
+//
+// 2026-09-30 对齐 DocCRM 移植。由 services/llm/models.LLMClientModel 隐式实现
+// （其同时提供 Provider / ModelName / ChatRaw）。此处不依赖 models 包，
+// 保持 services/ai 与 services/llm/models 的解耦。
+type MultimodalProber interface {
+	Provider() string
+	ModelName() string
+	ChatRaw(ctx context.Context, req *llmclient.ChatRequest) (*llmclient.ChatResponse, error)
+}
 
 // 多模态检测服务
 //   - 方案A：元数据硬编码（MiniMax-M3 固定支持图片，无需探测）
@@ -153,15 +167,12 @@ func IsKnownNoVisionError(msg string) bool {
 //   - 优先使用元数据快速判断（MiniMax-M3 等）
 //   - 无法判断时进行 API 探测
 //   - 返回 *bool 类型（nil 表示检测不确定，不写 DB）
-func TestMultimodal(adapter ProviderAdapter) *MultimodalResult {
-	// 获取 provider 和 modelName（如果有）
-	var provider, modelName string
-	if p, ok := adapter.(interface{ Provider() string }); ok {
-		provider = p.Provider()
-	}
-	if m, ok := adapter.(interface{ ModelName() string }); ok {
-		modelName = m.ModelName()
-	}
+//
+// 参数：prober 需实现 Provider/ModelName/ChatRaw(*llmclient.ChatRequest)。
+// 当前由 services/llm/models.LLMClientModel 隐式实现 —— 与实际对话同一条链路。
+func TestMultimodal(prober MultimodalProber) *MultimodalResult {
+	provider := prober.Provider()
+	modelName := prober.ModelName()
 
 	// 方案A：元数据快速判断
 	if provider != "" && modelName != "" {
@@ -185,20 +196,17 @@ func TestMultimodal(adapter ProviderAdapter) *MultimodalResult {
 	// 方案B：API 探测（使用 1x1 透明 PNG）
 	t0 := time.Now()
 
-	images := []ChatImage{
-		{Base64: ProbePNG1x1Base64, Mime: "image/png"},
-	}
-
-	req := &ChatRequest{
-		Messages: []ChatMessage{
+	req := &llmclient.ChatRequest{
+		Messages: []llmclient.Message{
 			{Role: "user", Content: TestPrompt},
 		},
-		Images:    images,
-		MaxTokens: ptrInt(1024),
-		TimeoutMs: 60000,
+		Images: []llmclient.Image{
+			{Base64: ProbePNG1x1Base64, Mime: "image/png"},
+		},
+		MaxTokens: 1024,
 	}
 
-	resp, err := adapter.Chat(req)
+	resp, err := prober.ChatRaw(context.Background(), req)
 	latencyMs := int(time.Since(t0).Milliseconds())
 
 	if err != nil {
