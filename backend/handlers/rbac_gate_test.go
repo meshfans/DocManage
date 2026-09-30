@@ -51,7 +51,7 @@ func TestGetUser_OtherUser_Returns403(t *testing.T) {
 	c.Params = gin.Params{gin.Param{Key: "id", Value: "999"}}
 	c.Set("user_id", int64(7)) // 当前用户 7，path id 999 → 不等于
 
-	NewUserExtendedHandler().GetUser(c)
+	NewUserExtendedHandler(nil).GetUser(c)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("普通用户访问他人期望 403, 实际 %d (body=%s)", w.Code, w.Body.String())
@@ -68,7 +68,7 @@ func TestCheckUsername_NoAdmin_Returns403(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/users/check-username?username=alice", nil)
 
-	NewUserExtendedHandler().CheckUsername(c)
+	NewUserExtendedHandler(nil).CheckUsername(c)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("CheckUsername 非 admin 期望 403, 实际 %d (body=%s)", w.Code, w.Body.String())

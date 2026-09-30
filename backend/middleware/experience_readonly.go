@@ -37,6 +37,9 @@ func experienceWriteAllowed(method, path string) bool {
 	}
 	// Whitelist: non-business-mutation POST/PUT/DELETE endpoints that need to
 	// work during experience mode. Share audit pages are public and safe.
+	// 2026-09-30 说明：/api/share/audit/consent-letter-view 目前在本项目尚未注册
+	// （仅 DocManage / DocWMS 有该路由），故这条暂时是"预留白名单"而非死代码。
+	// 故意保留而非删除：若日后补上该公开分享路由，漏改白名单会让它静默返回 423。
 	for _, allowedPath := range []string{
 		"/api/login",
 		"/api/logout",

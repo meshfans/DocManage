@@ -142,7 +142,7 @@
 | 1 | **新消息提示音** | Web Audio API 机器合成「叮咚」音效，业务配置 `notification_sound_enabled` 开关控制 |
 | 2 | **业务配置按值类型渲染** | 后端 `config_defaults.go` 新增 `ValueType` + `EnumOptions`，前端按 bool/enum/number/text 渲染 4 种编辑组件 |
 | 3 | **消息角标统一重构** | 抽 `useMessageNotice` composable，WS 多订阅 Set，删「任务」tab，角标唯一权威 |
-| 4 | **体验版 config.mode=test** | 显式声明 `mode:"test"`，便于切换 `experience` 演示模式 |
+| 4 | **体验版 config.mode=test** | 显式声明 `mode:"test"`。⚠️ 2026-09-30 更新：切换 `experience` 演示模式**已不能再从「系统配置」页操作**——对齐 DocCRM 2026-09-23 P0，admin 在 UI 不再持有该字段（`SaveConfigFile` 也不回写），否则可一键绕过 `ExperienceReadOnly` 只读拦截。现在只能改磁盘 `config.json` 的 `database.mode` 后重启，或用 `DB_MODE` 环境变量覆盖；`backend/bin/config.json` 的 `mode` 仅作本地开发基线 |
 
 ### 遗留功能（2026-07-22 ~ 2026-08-22）
 

@@ -192,6 +192,22 @@ func applyEnvOverrides(config *Config) {
 }
 
 func validateConfig(config *Config) {
+	// 2026-09-30 P0-2：先归一化 database.mode（去首尾空白 + 转小写），再做后续校验。
+	//
+	// 修的问题：原先 isValidDatabaseMode 大小写敏感，未知值只 warn 不阻断启动，而
+	// IsExperienceMode() 用 == "experience" 精确匹配。于是 {"mode":"Experience"} 这类
+	// 拼写会「告警 + 正常启动 + IsExperienceMode()=false」——运维以为开了只读演示，
+	// 实际全站可写，即静默降级到了更宽松的一侧。
+	//
+	// 选归一化而不是拒绝启动：任何现网 / 开发配置都不会因此起不来（零回归），
+	// 且拼写错误会落到更严格的一侧（experience 被真正识别为体验模式）。
+	// DB_MODE 环境变量的值同样经过这里（applyEnvOverrides 在 validateConfig 之前）。
+	if normalized := normalizeDatabaseMode(config.Database.Mode); normalized != config.Database.Mode {
+		utils.Warn("[config] database.mode=%q 已归一化为 %q（大小写与首尾空白不敏感）",
+			config.Database.Mode, normalized)
+		config.Database.Mode = normalized
+	}
+
 	if !isValidDatabaseMode(config.Database.Mode) {
 		utils.Warn("[config] 未知 database.mode=%q（允许值: %s），按正常模式继续运行",
 			config.Database.Mode, strings.Join(validDatabaseModes(), ", "))
@@ -390,7 +406,17 @@ func IsPathTraversal(filePath string) bool {
 //
 // 返回 false 当 GlobalConfig 未初始化，保证 nil-safe。
 func IsExperienceMode() bool {
-	return GlobalConfig != nil && GlobalConfig.Database.Mode == "experience"
+	// 归一化后再比对：LoadConfig 已在 validateConfig 里归一化 config.Database.Mode，
+	// 这里再兜一层，防止任何绕过 validateConfig 直接写 GlobalConfig 的路径（测试 /
+	// 未来的热更新）重新引入 P0-2 的大小写拼写降级。
+	return GlobalConfig != nil && normalizeDatabaseMode(GlobalConfig.Database.Mode) == "experience"
+}
+
+// normalizeDatabaseMode 归一化 database.mode：去首尾空白 + 转小写。
+// 2026-09-30 P0-2 配套：消除 "Experience" / "experience " 这类拼写被静默当成正常模式
+// （= 全站可写）的隐患。小写化与 PLUGIN_AUTO_START 的处理方式保持一致。
+func normalizeDatabaseMode(mode string) string {
+	return strings.ToLower(strings.TrimSpace(mode))
 }
 
 // validDatabaseModes 返回 database.mode 允许值集合。
@@ -404,8 +430,9 @@ func validDatabaseModes() []string {
 }
 
 func isValidDatabaseMode(mode string) bool {
+	normalized := normalizeDatabaseMode(mode)
 	for _, m := range validDatabaseModes() {
-		if mode == m {
+		if normalized == m {
 			return true
 		}
 	}

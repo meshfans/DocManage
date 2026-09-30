@@ -115,8 +115,12 @@ type JWTConfig struct {
 }
 
 type DatabaseConfig struct {
-	Path              string `json:"path"`
-	Mode              string `json:"mode"`
+	Path string `json:"path"`
+	// Mode（运行模式 experience / production / test …）已下线：
+	// 2026-09-30 对齐 DocCRM（2026-09-23 P0）— 此项只能通过修改磁盘 config.json
+	// 切换，admin 在「系统配置」页不再持有此字段，否则体验模式（只读拦截）可被
+	// 一键绕过。SaveConfigFile 本就不回写该字段，保留它只会让前端误以为可切换。
+	// 后端进程内维护的 GlobalConfig.Database.Mode 仍由 config.LoadConfig 读取。
 	JournalMode       string `json:"journal_mode"`
 	Synchronous       string `json:"synchronous"`
 	CacheSize         int    `json:"cache_size"`
