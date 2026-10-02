@@ -52,3 +52,9 @@ todo*
 __pycache__/
 # Debug 凭证（运行时生成，时间窗口过期后作废；不与 license_config.json 一起入库）
 tools/license/debug_config.json
+# 签发方 RSA 私钥 —— 绝不入库。
+# 拿到它即可为任意 machine_code / app_id / features / 到期时间签发合法 license，
+# 整个授权体系失效且无法通过后续提交挽回。
+# public.pem 是验签公钥，需随包分发，故显式排除在忽略规则之外。
+private*.pem
+*.key

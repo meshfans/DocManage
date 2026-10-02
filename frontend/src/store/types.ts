@@ -45,6 +45,21 @@ export type userType = {
   nickname?: string;
   roles?: Array<string>;
   permissions?: Array<string>;
-  isRemembered?: boolean;
+  /**
+   * 当前 license 启用的 module key 集合（2026-10-01 C1/C2 统一）。
+   *
+   * 数据来源：登录后 GET /api/license/features 响应里的 module_keys 字段
+   * （后端 handlers/license_features.go 从 sdk.GlobalOutcome 派生，
+   *   白名单见 backend/pkg/license/sdk/feature.go 的 BusinessModuleKeys）。
+   *
+   * 当前白名单：rag / ocr / ai。
+   *   - "ai" 决定 /system/ai-config 页面是否显示；
+   *     无 "ai" 时隐藏该页，系统默认使用 meshfans 提供的 LLM 能力。
+   *
+   * 未登录或拉取失败时为空数组 → 所有 requiredFeature 页面保守隐藏。
+   *
+   * hasFeature(key) 用精确字符串相等匹配（区分大小写、不 trim、不子串）。
+   */
+  moduleKeys?: Array<string>;  isRemembered?: boolean;
   loginDay?: number;
 };

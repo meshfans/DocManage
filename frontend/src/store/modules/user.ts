@@ -14,6 +14,8 @@ import {
   getUserInfo,
   refreshTokenApi
 } from "@/api/user";
+  // 2026-10-01 C1/C2 统一：拉取 license 能力（module_keys），决定 requiredFeature 页面显隐
+  import { getLicenseFeatures } from "@/api/license";
 import { useMultiTagsStoreHook } from "./multiTags";
 import {
   type DataInfo,
@@ -37,7 +39,10 @@ export const useUserStore = defineStore("pure-user", {
     permissions:
       storageLocal().getItem<DataInfo<number>>(userKey)?.permissions ?? [],
     // 是否勾选了登录页的免登录
-    isRemembered: false,
+    // 2026-10-01 C1/C2 统一：当前 license 启用的 module key 集合。
+    // 登录后由 loginByUsername / refreshFromApi fetch /api/license/features 填充。
+    // "ai" 决定 /system/ai-config 页面是否显示（无则默认用 meshfans 的 LLM 能力）。
+    moduleKeys: [],    isRemembered: false,
     // 登录页的免登录存储几天，默认7天
     loginDay: 7
   }),
@@ -61,6 +66,10 @@ export const useUserStore = defineStore("pure-user", {
     /** 存储按钮级别权限 */
     SET_PERMS(permissions: Array<string>) {
       this.permissions = permissions;
+    },
+    /** 2026-10-01 C1/C2 统一：存 license 启用的 module key 集合 */
+    SET_MODULE_KEYS(keys: Array<string>) {
+      this.moduleKeys = keys;
     },
     /** 存储是否勾选了登录页的免登录 */
     SET_ISREMEMBERED(bool: boolean) {
@@ -86,6 +95,14 @@ export const useUserStore = defineStore("pure-user", {
             await this.refreshFromApi();
           } catch (e) {
             console.debug("[user store] post-login refreshFromApi failed", e);
+          }
+          // 2026-10-01 C1/C2 统一：登录成功后立即拉 license 能力。
+          // 必须在路由装配（initDynamicRouter → filterTree）之前完成，
+          // 否则 AI 配置页会因 moduleKeys 尚为空而被误隐藏。
+          try {
+            await this.refreshLicenseFeatures();
+          } catch (e) {
+            console.debug("[user store] post-login refreshLicenseFeatures failed", e);
           }
         }
         return res;
@@ -123,7 +140,43 @@ export const useUserStore = defineStore("pure-user", {
      * 用于 Plan B 权限版本变化时 reload 前刷新 localStorage，避免 reload 后旧数据生效
      * 2026-06-25 P1-7.1 修复
      */
-    async refreshFromApi() {
+    /**
+     * 2026-10-01 C1/C2 统一：拉取 license 能力，写入 moduleKeys。
+     *
+     * 数据源：GET /api/license/features 的 module_keys 字段
+     *        （后端 handlers/license_features.go 从 sdk.GlobalOutcome 派生，
+     *          白名单见 pkg/license/sdk/feature.go 的 BusinessModuleKeys）
+     * 当前白名单：rag / ocr / ai。其中 "ai" 控制 AI 配置页显隐。
+     *
+     * 失败时不抛：moduleKeys 保持空数组 → hasFeature 全返 false
+     *              → AI 配置页等 requiredFeature 页面保守隐藏。
+     *
+     * 2026-10-02 M-6 修复：失败时重试 1 次（间隔 1s）。
+     *   场景：登录后端短暂 502 / 网络抖动 → moduleKeys 永久空 → AI 配置页
+     *   永久不可见，必须刷页。新增 retry 兜底：单次抖动场景自动恢复。
+     */
+    async refreshLicenseFeatures() {
+      const tryOnce = async () => {
+        try {
+          const res = await getLicenseFeatures();
+          if (res?.success && res.data && Array.isArray(res.data.module_keys)) {
+            this.SET_MODULE_KEYS(res.data.module_keys);
+            return true;
+          }
+          this.SET_MODULE_KEYS([]);
+          return false;
+        } catch (e) {
+          console.debug("[user store] getLicenseFeatures failed", e);
+          this.SET_MODULE_KEYS([]);
+          return false;
+        }
+      };
+
+      if (await tryOnce()) return;
+      // 单次重试：1s 后再拉一次。两次都失败 → 保守置空（与历史行为一致）
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await tryOnce();
+    },    async refreshFromApi() {
       try {
         const res: any = await getUserInfo();
         if (res?.success && res.data) {
