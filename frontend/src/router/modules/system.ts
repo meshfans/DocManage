@@ -70,7 +70,15 @@ export default {
       meta: {
         title: "AI 配置",
         icon: "ri/brain-line",
-        rank: 4
+        rank: 4,
+        // 2026-10-01 C1/C2 统一：AI 配置页受 license "ai" feature 门禁。
+        //   有 "ai" → 显示本页，用户可自由配置 LLM 接入
+        //   无 "ai" → 隐藏本页，系统默认使用 meshfans 提供的 LLM 能力
+        // 复用既有的 meta.licenseModuleKey 机制（与 /system/vec-index 的
+        // licenseModuleKey:"rag" 同一套，双层：filterNoPermissionTree 菜单过滤
+        // + router.beforeEach 直连 URL 守卫）。后端对应
+        // /api/ai-configs/** 的 middleware.FeatureGate("ai")。
+        licenseModuleKey: "ai"
       }
     },
     {

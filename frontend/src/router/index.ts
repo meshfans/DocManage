@@ -6,6 +6,7 @@ import { buildHierarchyTree } from "@/utils/tree";
 import remainingRouter from "./modules/remaining";
 import { useMultiTagsStoreHook } from "@/store/modules/multiTags";
 import { usePermissionStoreHook } from "@/store/modules/permission";
+import { useUserStoreHook } from "@/store/modules/user";
 import {
   isUrl,
   openLink,
@@ -158,6 +159,19 @@ router.beforeEach((to: ToRouteType, _from, next) => {
     if (to.meta?.adminOnly === true && userInfo.username !== "admin") {
       next({ path: "/error/403" });
       return;
+    }
+    // 2026-10-01 C1/C2 统一：license feature 双层防御的第二层。
+    //   meta.licenseModuleKey 要求 license 含对应 module key，否则 403。
+    //   第一层在 filterNoPermissionTree（菜单不显示），这里拦直连 URL
+    //   （防书签 / 手输地址绕过）。与 DocCRM 的 vec-index 门禁同一套机制。
+    //   moduleKeys 为空 → 视为未授权（覆盖"未登录 / 拉取失败"边界）。
+    const licKey = to.meta?.licenseModuleKey;
+    if (licKey) {
+      const moduleKeys = useUserStoreHook()?.moduleKeys ?? [];
+      if (!moduleKeys.includes(licKey)) {
+        next({ path: "/error/403" });
+        return;
+      }
     }
     if (isRouteGuarded(to.meta ?? {})) {
       if (!hasAnyPerms(to.meta.permissions as string[])) {

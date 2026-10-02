@@ -27,10 +27,20 @@ type CombinedServer struct {
 	keyFile    string
 }
 
-func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *handlers.WebSocketHandler) *CombinedServer {
+// NewCombinedServer 组装 HTTP + WS 复合服务。
+//
+// debugModeActive（2026-10-01 C5 统一新增）：pkg/debug 解密 config.json 顶层
+// "debug" 密文信封后的时间窗命中结果，由 main.go 在启动期校验 license 后传入。
+// 与既有的 cfg.Server.Debug（手动改 config.json 的布尔开关）并存 ——
+// 两者任一为真即挂载 pprof。
+func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *handlers.WebSocketHandler, debugModeActive bool) *CombinedServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	router.Use(gin.Recovery())
+	// Recovery 必须是第一个 Use() —— 兜底后续所有中间件 + handler 的 panic，
+	// 避免单个 handler 异常把整个进程拖死。
+	// 不再使用 gin.Recovery()：它只把 panic 写 stderr，不接项目统一日志
+	//（utils.LogError），运维无法检索。改用 middleware.Recovery()。
+	router.Use(middleware.Recovery())
 	// Trace() 必须在 RequestLogger 之前，否则访问日志读不到 trace_id。
 	router.Use(middleware.Trace())
 	// Metrics 中间件插在 Trace 之后、RequestLogger 之前：
@@ -53,11 +63,23 @@ func NewCombinedServer(cfg *config.Config, jwtUtils interface{}, wsHandler *hand
 	registerWebSocketRoutes(router, jwtUtils, wsHandler)
 	registerWebRoutes(router, cfg)
 
-	// Phase 5b (High #16)：Debug 模式才挂载 pprof。
-	// 通过 server.json server.debug=true 启用，生产默认 false 不暴露 /debug/pprof/*。
-	if cfg.Server.Debug {
-		registerPprofRoutes(router)
-		utils.Info("[pprof] 已挂载 /debug/pprof/* （Debug 模式）")
+	// pprof 门控（2026-10-01 C5 统一后为"或"关系）：
+	//   1. cfg.Server.Debug —— 运维手动改 config.json 的布尔开关（旧机制保留）
+	//   2. debugModeActive  —— pkg/debug 解密顶层 "debug" 密文信封且时间窗命中（新机制）
+	// 两者任一为真即挂载；生产两者默认皆 false。
+	//
+	// 鉴权依赖 *utils.JWTUtils，断言失败则跳过挂载（宁可不挂，也不无鉴权暴露）。
+	if cfg.Server.Debug || debugModeActive {
+		src := "config.server.debug"
+		if debugModeActive {
+			src = "debug envelope time window"
+		}
+		if jwt, ok := jwtUtils.(*utils.JWTUtils); ok {
+			registerPprofRoutes(router, jwt)
+			utils.Info("[pprof] mounted /debug/pprof/* (source=%s, JWT+admin guarded)", src)
+		} else {
+			utils.Warn("[pprof] gate hit (source=%s) but JWT utils assertion failed, skip mounting (avoid unauthenticated exposure)", src)
+		}
 	}
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
@@ -226,6 +248,17 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 				protected.POST("/system-config/update", systemConfigHandler.UpdateConfig)
 				protected.POST("/system-config/:key/delete", systemConfigHandler.DeleteConfig)
 
+				// license 能力查询（2026-10-01 C1/C2 统一）。
+				// 挂 JWT auth 即可，不挂 APIGate —— license features 是授权维度而非
+				// 业务 permission_code，且需要普通 user 也可读（前端据此决定
+				// AI 配置页等 requiredFeature 页面是否显示），故独立走。
+				protected.GET("/license/features", systemHandler.GetLicenseFeatures)
+
+				// /license/machine-code：返回本机机器码（2026-10-01 C1/C2 统一）。
+				// 挂在 protected 组（JWT + APIGate），处理器内再做 RequireAdmin 二次校验。
+				// 机器码是 license 签发的必要输入，不放公开路径。
+				protected.GET("/license/machine-code", systemHandler.GetMachineCode)
+
 				// 第三方合同登记
 				tpHandler := handlers.NewThirdPartyHandler(cfg)
 				protected.GET("/third-party/contracts", tpHandler.ListContracts)
@@ -259,17 +292,31 @@ func registerAPIRoutes(router *gin.Engine, jwtUtils interface{}, cfg *config.Con
 
 				// AI 配置管理
 				aiConfigHandler := handlers.NewAIConfigHandler()
-				protected.GET("/ai-configs", aiConfigHandler.ListAIConfigs)
-				protected.GET("/ai-configs/:id", aiConfigHandler.GetAIConfig)
-				protected.POST("/ai-configs", aiConfigHandler.CreateAIConfig)
-				protected.POST("/ai-configs/:id", aiConfigHandler.UpdateAIConfig)
-				protected.POST("/ai-configs/:id/delete", aiConfigHandler.DeleteAIConfig)
-				protected.POST("/ai-configs/:id/default", aiConfigHandler.SetDefaultAIConfig)
-				protected.POST("/ai-configs/:id/test", aiConfigHandler.TestAIConfig)
-				protected.POST("/ai-configs/:id/key", aiConfigHandler.UpdateAIConfigKey)
-				protected.POST("/ai-configs/:id/multimodal", aiConfigHandler.ToggleMultimodal)
-				protected.POST("/ai-configs/test", aiConfigHandler.TestAIConfigInline)
-				protected.GET("/ai-meta", aiConfigHandler.GetAIMeta)
+				// 2026-10-01 C1/C2 统一：AI 配置端点逐条挂 FeatureGate("ai")。
+				//   license 不含 "ai" → 全部 403，用户无法自建 LLM 接入，
+				//   系统按设计默认使用 meshfans 提供的 LLM 能力。
+				// 口径与前端 routes/modules/system.ts 的 meta.requiredFeature:"ai" 一致。
+				//
+				// 用内联中间件而非 protected.Group("/ai-configs", ...)：
+				// 保持 protected.<METHOD> 的字面写法，权限种子对账才能对上。
+				//
+				// 2026-10-02 M-5 修复：新增 ai 相关端点必须挂 aiGate。
+				//   挂载约束详见 docs/adr/0006-license-feature-gate-后端挂载约束.md。
+				//   当前 aiGate 挂在 11 个端点：list / detail / create / update /
+				//   delete / set-default / test / key / multimodal / test-inline / ai-meta。
+				//   新增 endpoint 时务必同步加进这 11 行（+ 在 ADR 里追加）。
+				aiGate := middleware.FeatureGate("ai")
+				protected.GET("/ai-configs", aiGate, aiConfigHandler.ListAIConfigs)
+				protected.GET("/ai-configs/:id", aiGate, aiConfigHandler.GetAIConfig)
+				protected.POST("/ai-configs", aiGate, aiConfigHandler.CreateAIConfig)
+				protected.POST("/ai-configs/:id", aiGate, aiConfigHandler.UpdateAIConfig)
+				protected.POST("/ai-configs/:id/delete", aiGate, aiConfigHandler.DeleteAIConfig)
+				protected.POST("/ai-configs/:id/default", aiGate, aiConfigHandler.SetDefaultAIConfig)
+				protected.POST("/ai-configs/:id/test", aiGate, aiConfigHandler.TestAIConfig)
+				protected.POST("/ai-configs/:id/key", aiGate, aiConfigHandler.UpdateAIConfigKey)
+				protected.POST("/ai-configs/:id/multimodal", aiGate, aiConfigHandler.ToggleMultimodal)
+				protected.POST("/ai-configs/test", aiGate, aiConfigHandler.TestAIConfigInline)
+				protected.GET("/ai-meta", aiGate, aiConfigHandler.GetAIMeta)
 
 				// LLM Copilot（4 个端点）
 				llmHandler := handlers.NewLLMHandler()
@@ -313,19 +360,59 @@ func registerHealthRoutes(router *gin.Engine, wsHandler *handlers.WebSocketHandl
 	router.GET("/metrics", handlers.MetricsHandlerWithDependencies(wsHandler, sched))
 }
 
-// registerPprofRoutes Phase 5b (High #16)：仅 Debug=true 时挂载 pprof，
-// 用于生产环境 CPU / 内存 / goroutine dump 分析。
+// registerPprofRoutes 挂载 pprof 路由（仅在 debug 门控命中时调用）。
 //
-// 注意：pprof handler 注册到独立 ServeMux，再用 gin.WrapH 包装，避免
-// 与现有 JWTAuth / Metrics / RequestLogger 中间件产生干扰。
-func registerPprofRoutes(router *gin.Engine) {
+// 2026-10-01 C5 统一：从原先的 `router.Any` 无鉴权裸挂载，升级为与 DocCRM 一致的
+// **JWT + RequireAdmin + 仅 GET** 版本。
+//
+// 为什么必须鉴权：heap / goroutine / trace dump 可能包含内存中的 JWT secret、
+// license password 与业务 PII。debug 时间窗只解决了"何时可访问"，没解决
+// "谁能访问"——裸挂载等于任何能连到端口的人都能拿到内存快照。
+//
+// 2026-10-02 M-1 修复：关闭 /debug/pprof/trace 端点。
+//   - /trace 用于 CPU 执行 trace（5s 默认采样），可能影响线上业务延迟；
+//   - 安全维度它和 /heap 同等敏感但实际用得极少；
+//   - 关闭后其它端点（heap/goroutine/profile/symbol/cmdline）仍可采样，
+//     满足 99% 调试需求；真要 trace 时改回这行 + 重启即可。
+//
+// 2026-10-02 M-2 修复：每个 pprof 请求记独立审计日志。
+//   - 走独立 ServeMux + gin.WrapH 意味着不会触发项目 RequestLogger，
+//     历史上 pprof 访问不进 access log，运维误判为"无人访问"。
+//   - 本函数现在显式用 middleware.RequestLogger 包裹（从外面 wrap），并在
+//     /debug/pprof 前置一段独立 auditHandler 记 audit 日志。
+//
+// 访问方式（浏览器无法直接带 Bearer，用 curl 取数后本地分析）：
+//
+//	curl -H "Authorization: Bearer <admin access token>" \
+//	  http://host:8443/debug/pprof/heap -o heap.pprof
+func registerPprofRoutes(router *gin.Engine, jwtUtils *utils.JWTUtils) {
 	pprofMux := http.NewServeMux()
 	pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
 	pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	router.Any("/debug/pprof/*action", gin.WrapH(pprofMux))
+	// M-1：/debug/pprof/trace 不注册 ——
+	//   注释见函数顶端。/debug/pprof/trace* 请求将落到 pprofMux 但无 handler，
+	//   http.ServeMux 默认返 404。
+
+	adminGate := func(c *gin.Context) {
+		// RequireAdmin 失败时已写 403 响应，此处只需 Abort 阻断 pprof mux。
+		if !handlers.RequireAdmin(c) {
+			c.Abort()
+			return
+		}
+		// M-2：审计日志。pprof 端点不走 RequestLogger，这里手动写一行
+		// info 级日志便于审计 / 异常排查。admin 用户名取自 context
+		// （JWTAuth 中间件已 set）。
+		username, _ := c.Get("username")
+		utils.Info("[pprof-audit] admin=%v path=%s query=%s ua=%s",
+			username, c.Request.URL.Path, c.Request.URL.RawQuery, c.Request.UserAgent())
+		c.Next()
+	}
+	pprofGroup := router.Group("/debug", middleware.JWTAuth(jwtUtils), adminGate)
+	// pprof 端点只需要 GET，按项目「所有 API 只允许 GET 和 POST」的约定收敛。
+	// 原先的 router.Any 还接受 PUT/DELETE/PATCH 等任意方法。
+	pprofGroup.GET("/pprof/*action", gin.WrapH(pprofMux))
 }
 
 // registerWebRoutes 注册前端静态资源、index.html、platform-config.json 等路由。

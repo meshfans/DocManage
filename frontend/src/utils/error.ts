@@ -45,9 +45,28 @@ const I18N: Record<string, Record<Locale, string>> = {
     "zh-CN": "资源不存在",
     "en-US": "Resource not found"
   },
+  // ===== 2026-10-01 C1 统一：utils.defaultCodeForStatus 的 HTTP 兜底码 =====
+  // 后端 Response.Code 在未显式调 utils.Err(c, code, msg) 时按 HTTP 状态填这些码
   "common.conflict": {
     "zh-CN": "资源冲突",
     "en-US": "Resource conflict"
+  },
+  // ===== 2026-10-01 C1 统一：utils.defaultCodeForStatus 的 HTTP 兜底码 =====
+  "common.unprocessable": {
+    "zh-CN": "请求无法处理",
+    "en-US": "Unprocessable request"
+  },
+  "common.too_many_requests": {
+    "zh-CN": "请求过于频繁，请稍后重试",
+    "en-US": "Too many requests, please try again later"
+  },
+  "internal.error": {
+    "zh-CN": "服务器内部错误，请稍后重试",
+    "en-US": "Internal server error, please try again later"
+  },
+  "internal.unavailable": {
+    "zh-CN": "服务暂时不可用，请稍后重试",
+    "en-US": "Service temporarily unavailable, please try again later"
   },
   "common.rate_limited": {
     "zh-CN": "请求过于频繁，请稍后再试",

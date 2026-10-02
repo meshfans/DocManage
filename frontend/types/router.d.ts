@@ -20,6 +20,27 @@ declare global {
     extraIcon?: string | FunctionalComponent;
     /** 是否在菜单中显示（默认`true`）`可选` */
     showLink?: boolean;
+    /**
+     * 访问该页面所需的 license feature key（2026-10-01 C1/C2 统一）。
+     *
+     * 双层门禁：
+     *   1. filterNoPermissionTree（router/utils.ts）过滤菜单 —— 无 key 则入口不显示
+     *   2. router.beforeEach（router/index.ts）拦截直连 URL —— 防书签 / 手输绕过
+     *
+     * 数据源：GET /api/license/features 的 module_keys
+     *        （后端 handlers/license_features.go 从 sdk.GlobalOutcome 派生）
+     *
+     * 判定为**保守**语义：moduleKeys 拉取失败或未登录时一律拦截。
+     *
+     * 使用处：
+     *   - /system/vec-index  → "rag"（RAG 向量索引）
+     *   - /system/ai-config  → "ai" （AI 配置；无则默认用 meshfans 的 LLM 能力）
+     *
+     * 合法取值见 backend/pkg/license/sdk/feature.go 的 BusinessModuleKeys
+     * （当前为 rag / ocr / ai）。后端对应 middleware.FeatureGate(key)。
+     */
+    licenseModuleKey?: string;
+
     /** 是否显示父级菜单 `可选` */
     showParent?: boolean;
     /** 菜单升序排序，值越高排的越后 `可选` */
@@ -110,6 +131,27 @@ declare global {
       icon?: string | FunctionalComponent;
       /** 是否在菜单中显示（默认`true`）`可选` */
       showLink?: boolean;
+    /**
+     * 访问该页面所需的 license feature key（2026-10-01 C1/C2 统一）。
+     *
+     * 双层门禁：
+     *   1. filterNoPermissionTree（router/utils.ts）过滤菜单 —— 无 key 则入口不显示
+     *   2. router.beforeEach（router/index.ts）拦截直连 URL —— 防书签 / 手输绕过
+     *
+     * 数据源：GET /api/license/features 的 module_keys
+     *        （后端 handlers/license_features.go 从 sdk.GlobalOutcome 派生）
+     *
+     * 判定为**保守**语义：moduleKeys 拉取失败或未登录时一律拦截。
+     *
+     * 使用处：
+     *   - /system/vec-index  → "rag"（RAG 向量索引）
+     *   - /system/ai-config  → "ai" （AI 配置；无则默认用 meshfans 的 LLM 能力）
+     *
+     * 合法取值见 backend/pkg/license/sdk/feature.go 的 BusinessModuleKeys
+     * （当前为 rag / ocr / ai）。后端对应 middleware.FeatureGate(key)。
+     */
+    licenseModuleKey?: string;
+
       /** 菜单升序排序，值越高排的越后（只针对顶级路由）`可选` */
       rank?: number;
       /** 顶级路由权限（OR 语义）`可选`
