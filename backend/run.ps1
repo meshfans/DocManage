@@ -25,4 +25,6 @@ if ($usingFallback) {
     Write-Host ""
 }
 
-go run ./main.go
+# 注意：必须用 `go run .`（整包），不能用 `go run ./main.go`（单文件）——
+# main.go 引用了同包其它文件的 bootstrapLicenseAndDebug 等符号，单文件编译会报 undefined
+go run .

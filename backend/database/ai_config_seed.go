@@ -2,7 +2,10 @@ package database
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"doc/utils"
 )
 
 // SeedAIConfigs 插入 AI 配置种子数据（仅当表为空时）
@@ -34,11 +37,11 @@ func SeedAIConfigs() error {
 		MMSrc       string
 	}{
 		{
-			Name:      "模小范 · meshfans-v1（官方 OpenAI 兼容）",
+			Name:      "模小范 · meshfans-v1（官方）",
 			Provider:  "meshfans",
 			Protocol:  "openai_chat",
 			ModelName: "meshfans-v1",
-			APIBase:   "https://aiv1.meshfans.com/v1",
+			APIBase:   "https://lmp.meshfans.com/api/v1",
 			APIPath:   "/chat/completions",
 			DefaultJSON: mustMarshalJSON(map[string]interface{}{
 				"temperature": 0.7,
@@ -48,8 +51,8 @@ func SeedAIConfigs() error {
 			ExtraJSON: mustMarshalJSON(map[string]interface{}{
 				"free":      false,
 				"authFree":  false,
-				"signupUrl": "https://aiv1.meshfans.com/",
-				"note":      "官方 OpenAI 兼容 API；向 meshfans 官方申请 API Key 填入即可使用。",
+				"signupUrl": "https://www.meshfans.com/",
+				"note":      "无需手填 API Key；自动复用全局 license_key (LICENSE_KEY env 或 config.license.license_key)。若需自建 key，在 AI 配置 api_key 字段填写即可覆盖。",
 			}),
 			IsDefault:   1,
 			Multimodal:  0,
@@ -149,4 +152,45 @@ func mustMarshalJSON(v interface{}) string {
 		return "{}"
 	}
 	return string(data)
+}
+
+// MigrateAIConfigs 升级历史 ai_config 行的字段（idempotent，重复执行无副作用）。
+//
+// 2026-10-02 M-4 修复：meshfans 官方 APIBase 已从
+// `https://aiv1.meshfans.com/v1` 切换到 `https://lmp.meshfans.com/api/v1`。
+// SeedAIConfigs 只在表为空时跑，已有部署的 meshfans 行不会被自动刷新——
+// 直接后果是 /api/llm/chat 仍然打到旧域名 → 401。
+//
+// 本函数每次启动跑一次（轻量 UPDATE），用 `provider + api_base` 精确匹配
+// 旧值，避免误改用户在 AI 配置页自填的同 provider 其他 base。
+//
+// 注意：
+//   - 仅改 APIBase，不动 api_key（用户已自填的 key 保留）
+//   - 不改 is_default（避免切换默认行）
+//   - 不改 multimodal 等无关字段
+func MigrateAIConfigs() error {
+	// 旧 meshfans base 列表 —— 后续如再次切换，只需在此追加旧值
+	oldMeshfansBases := []string{
+		"https://aiv1.meshfans.com/v1",
+	}
+
+	now := time.Now().Unix()
+	for _, oldBase := range oldMeshfansBases {
+		res, err := DB.Exec(`
+			UPDATE ai_config
+			SET api_base = ?,
+			    updated_at = ?
+			WHERE provider = 'meshfans'
+			  AND api_base = ?
+			  AND deleted_at IS NULL
+		`, "https://lmp.meshfans.com/api/v1", now, oldBase)
+		if err != nil {
+			return fmt.Errorf("迁移 meshfans api_base (old=%s) 失败: %w", oldBase, err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			utils.Info("[ai-config migration] meshfans api_base: %s → https://lmp.meshfans.com/api/v1（更新 %d 行）",
+				oldBase, n)
+		}
+	}
+	return nil
 }

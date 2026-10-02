@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"doc/config"
 	"doc/pkg/llmclient"
+	"doc/utils"
 )
 
 // LLMClientModel 基于 llmclient 的 Model 实现
@@ -13,6 +15,35 @@ type LLMClientModel struct {
 	client    llmclient.Client
 	provider  string
 	modelName string
+}
+
+// resolveMeshfansAPIKey 兜底注入 LicenseKey（meshfans 专用）
+//
+// 2026-10-01 对齐 DocCRM / DocManage。
+//
+// 背景：license 不含 "ai" 时，/api/ai-configs/** 被 FeatureGate("ai") 全部 403，
+// 用户无法在页面上填写 API Key。而 /api/llm/** 不设门禁（Copilot 默认全开放），
+// 仍会取 is_default=1 的种子行发请求。meshfans 种子行的 api_key 天然为空，
+// 没有兜底就会带着空 key 打 meshfans，必然 401。
+//
+// 优先级：
+//  1. ai_config.api_key（非空 → 用户自填 key 优先，兼容老用法）
+//  2. config.GlobalConfig.License.LicenseKey（兜底）
+//  3. 仍为空 → warn，由 meshfans 返回 401
+func resolveMeshfansAPIKey(cfg *ModelConfig) string {
+	if cfg.APIKey != "" {
+		return cfg.APIKey
+	}
+	if cfg.Provider != "meshfans" {
+		return cfg.APIKey
+	}
+	lc := config.GlobalConfig
+	if lc == nil || lc.License.LicenseKey == "" {
+		utils.Warn("[LLM] meshfans api_key 为空且未配置 license_key，请求将被服务端拒绝")
+		return ""
+	}
+	utils.Info("[LLM] meshfans api_key 兜底使用全局 license_key (len=%d)", len(lc.License.LicenseKey))
+	return lc.License.LicenseKey
 }
 
 // NewLLMClientModel 创建基于 llmclient 的 Model
@@ -32,7 +63,7 @@ func NewLLMClientModel(cfg *ModelConfig) *LLMClientModel {
 		Provider:  provider,
 		Protocol:  llmclient.Protocol(cfg.Protocol),
 		ModelName: cfg.ModelName,
-		APIKey:    cfg.APIKey,
+		APIKey:    resolveMeshfansAPIKey(cfg),
 		APIBase:   cfg.APIBase,
 		APIPath:   cfg.APIPath,
 		ProxyURL:  cfg.ProxyURL,

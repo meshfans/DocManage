@@ -143,6 +143,58 @@ const (
 	CodeSystemDepMissing ErrCode = "system.dependency_missing"
 )
 
+// ==================== License / 模块门禁（2026-09-28）====================
+//
+// 设计：RAG / OCR 等"插件型"模块在 license 未签发对应 feature 时，
+// 中间件 FeatureGate 直接返 403 + CodeLicenseFeatureNotLicensed，
+// 前端 i18n 按此 code 翻译（"当前 license 未授权此模块"，不暴露 license 字眼）。
+const (
+	// CodeLicenseFeatureNotLicensed license 未签发此模块 feature。
+	// 用途：Gin 中间件 FeatureGate(key) 在 sdk.GlobalHasFeature(key)=false 时返。
+	// 配套模块 key：rag / ocr（仅业务实际消费的 key；payload features 数组里的元素仅作为白名单精确匹配）。
+	CodeLicenseFeatureNotLicensed ErrCode = "license.feature_not_licensed"
+)
+
+// ==================== CRM（DocCRM MVP 2026-09-15 接入）====================
+//
+// 2026-10-02 L-3 注释：以下 CRM 错误码为 DocCRM 同步保留，本项目（DocManageTrail）
+// 不会触发。保留原因：
+//   - 多项目共用 utils 包，便于上游中间件 / 跨项目引用对齐
+//   - future-proof：若后续 DocManageTrail 接入 CRM 模块可直接复用
+//   - i18n 表（frontend/src/utils/error.ts）按 code 命中，未命中的 code 不影响前端
+//
+// 命名规范：crm.<module>.<semantic>
+//   - module：contact / lead / opportunity / activity / customer_meta / dashboard
+//   - semantic：not_found / invalid / stage_invalid / recycled / already_converted / ...
+const (
+	// 联系人
+	CodeCRMContactNotFound ErrCode = "crm.contact.not_found"
+	CodeCRMContactInvalid  ErrCode = "crm.contact.invalid"
+
+	// 线索
+	CodeCRMLeadNotFound         ErrCode = "crm.lead.not_found"
+	CodeCRMLeadInvalid          ErrCode = "crm.lead.invalid"
+	CodeCRMLeadRecycled         ErrCode = "crm.lead.recycled"
+	CodeCRMLeadAlreadyConverted ErrCode = "crm.lead.already_converted"
+	CodeCRMLeadNotInPool        ErrCode = "crm.lead.not_in_pool"
+	CodeCRMLeadProtected        ErrCode = "crm.lead.protected"
+
+	// 商机
+	CodeCRMOpportunityNotFound    ErrCode = "crm.opportunity.not_found"
+	CodeCRMOpportunityInvalid     ErrCode = "crm.opportunity.invalid"
+	CodeCRMOpportunityStageInvalid ErrCode = "crm.opportunity.stage_invalid"
+	CodeCRMOpportunityClosed      ErrCode = "crm.opportunity.closed"
+
+	// 活动
+	CodeCRMActivityNotFound  ErrCode = "crm.activity.not_found"
+	CodeCRMActivityInvalid   ErrCode = "crm.activity.invalid"
+	CodeCRMActivityTargetInvalid ErrCode = "crm.activity.target_invalid"
+
+	// 客户 CRM 元数据
+	CodeCRMCustomerMetaNotFound ErrCode = "crm.customer_meta.not_found"
+	CodeCRMCustomerMetaInvalid  ErrCode = "crm.customer_meta.invalid"
+)
+
 // ==================== 错误码 → HTTP 状态 ====================
 
 // httpStatusFor 将错误码映射到 HTTP 状态码。
@@ -179,6 +231,10 @@ func httpStatusFor(code ErrCode) int {
 		CodeAuthRefreshExpired:
 		return http.StatusUnauthorized
 	case CodeForbidden:
+		return http.StatusForbidden
+	case CodeLicenseFeatureNotLicensed:
+		// FeatureGate 中间件失败：license 未签发此模块。
+		// 已登录、有权限，但 license 不带该 feature → 403。
 		return http.StatusForbidden
 	case CodeNotFound, CodeCustomerNotFound, CodeContractNotFound,
 		CodeMediaNotFound, CodeMediaCorrupted, CodeSignatureNotFound,

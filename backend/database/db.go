@@ -143,6 +143,13 @@ func InitDatabaseWithOptions(opts DatabaseInitOptions) error {
 		return fmt.Errorf("种子 AI 配置失败: %w", err)
 	}
 
+	// 2026-10-02 M-4 修复：升级历史 ai_config 行的 APIBase。
+	//   SeedAIConfigs 只在表为空时跑，已有部署的 meshfans 行需 MigrateAIConfigs
+	//   单独刷新。本函数 idempotent（精确匹配旧 base），重复执行无副作用。
+	if err = MigrateAIConfigs(); err != nil {
+		utils.Warn("[ai-config migration] 失败（不阻断启动）: %v", err)
+	}
+
 	return nil
 }
 
