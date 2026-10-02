@@ -21,6 +21,7 @@ playwright/.cache/
 tests/e2e/.auth/
 tests/e2e/setup/.auth/
 blob-report/
+tests/reports/
 
 # Editor directories and files
 .idea
