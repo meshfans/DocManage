@@ -1,4 +1,6 @@
 {
+  "debug": "",
+  
   "server": {
     "host": "0.0.0.0",
     "port": "8443",
@@ -33,6 +35,11 @@
   "worm": {
     "dir": "./uploads/worm",
     "export_dir": "./uploads/exports"
+  },
+  "license": {
+    "app_id": "doc_crm_v1",
+    "machine_code": "5A8393FA6146EFB0FC825B5D78729348",
+    "license_key": "ltvSoViToZUCARnxa4mVMOaWVuX/8hgt6zch/e9ku3m6ZJHSusGlKVd7nqWAFB6ti2apDlo+NcXZzchL+YCXdoolHtO9N20+GJOAcIA9bEl+jMVGmrsXJQTPWH/rmz1WXkeC33Kzti5S/YRaFV3CkcMrCNFH3KYxvw17WbXKVouCtGVGqzfy4Wp1N5GlhrQQICqBtG5by3JzpfQrcTI5edQkd74NTZux2Pr6hECxNi/TKiQ1+FvYIdhB4QjtUtLfaajI3OddvEsBynqpQf+HTB0+l0q+w9HdwEXQP9M7RN1yjCs2CfRuRZXoDAvfxClMx3CpmAKWUpiaJyoNvNyqTQiBk5LVUBW/jRstwCYdoI4lwada+b0ABVdVEaIYrDp2TfwMEBGcrejS3cZahDG15Cj++IggXIdDu4QrDeMIocUqZuMvZOKV60yb+gWtZvj4ecufOp0q+2O3SBn/SgL5ItZh95PS4I1yIJK/CoXRQwNnS9xRV9rHp7PbT5B7bk65O6RxX6rH776XciIFJVTqXY5aYU4GdSo5X9VUl2QOoXvUU7yiVzvbJmvxpFIDRETom7HrtH/sOvxy7n6SuVQyWQvdA1DBYj7OwBBEYlT6W+Ap8H1hZkispaOODCz8R1/U9CVcdZvSFXgojJeqYjv/V14LmYSL3I4/fDuF7ErW47ooCPQIDUmtiBjz4/m1lIg4GTLTguz+F0uXaod+VkxKPPoDqJ9NRHKQ2MlJWh6ex/0jM8ok/fe68L4GMQn+vNWneknWN1SdUwy4"
   },
   "log": {
     "dir": "./logs",

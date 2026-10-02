@@ -117,6 +117,10 @@ func seedRoles() error {
 				"systemconfig:public",
 				"routes:async",
 				"permission:version:query",
+				// 2026-10-02 H-4 修复：普通用户可读 license 能力。
+				//   前端据此决定 /system/ai-config 等 requiredFeature 页面显隐，
+				//   仅靠 JWT（无需 admin），故 common 角色需要这个权限码。
+				"license:features:query",
 				// 用户：自己信息 + 改密 + 登出
 				"user:info", // assertCommonHasUserInfo 不变式强依赖
 				"user:change-password",
@@ -289,7 +293,6 @@ func buildPermissionSeeds() []permSeed {
 		p("system:config:set", "改系统配置", "system", "/api/system/config", "POST"),
 		p("system:config-file:get", "查配置文件", "system", "/api/system/config-file", "GET"),
 		p("system:config-file:set", "改配置文件", "system", "/api/system/config-file", "POST"),
-
 		p("system:backup-now", "立即备份", "system", "/api/system/backup-now", "POST"),
 		p("system:restore", "恢复备份", "system", "/api/system/restore", "POST"),
 		p("system:maintenance:get", "查维护模式", "system", "/api/system/maintenance", "GET"),
@@ -305,7 +308,18 @@ func buildPermissionSeeds() []permSeed {
 
 		// === systemconfig ===
 		p("systemconfig:public", "公开业务配置", "systemconfig", "/api/system-config/public", "GET"),
+
+		// === license（2026-10-01 C1/C2 统一新增）===
+		// GET /api/license/features：查询当前 license 签发的 module key。
+		// 前端据此决定 requiredFeature 页面显隐（当前唯一使用处是
+		// /system/ai-config 的 "ai" 门禁），需要**普通登录用户**可读 ——
+		// 因此挂 seed 但不进 admin 专属集合，登录用户经 JWT 即可读取。
+		p("license:features:query", "查询授权能力", "license", "/api/license/features", "GET"),
 		p("systemconfig:list", "业务配置列表", "systemconfig", "/api/system-config/list", "GET"),
+		// 2026-10-01 C1/C2 统一新增：查询本机机器码。
+		// 仅 admin 可读（处理器内 RequireAdmin 二次校验），供运维首次签发 /
+		// 换机后重新签发时获取。不进 admin 之外的任何角色集合。
+		p("license:machine-code:query", "查询本机机器码", "license", "/api/license/machine-code", "GET"),
 		p("systemconfig:update", "改业务配置", "systemconfig", "/api/system-config/update", "POST"),
 		p("systemconfig:delete", "删业务配置", "systemconfig", "/api/system-config/:key/delete", "POST"),
 

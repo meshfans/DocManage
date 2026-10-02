@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"doc/utils"
 	"encoding/json"
 	"fmt"
@@ -11,14 +12,18 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `json:"server"`
-	JWT       JWTConfig       `json:"jwt"`
+	// Debug 段（2026-10-01 C5 统一）：base64 密文信封。
+	// 由 pkg/debug 在启动期解密，时间窗命中才挂载 /debug/pprof/*。
+	Debug      string          `json:"debug"`
+	Server     ServerConfig    `json:"server"`
+	JWT        JWTConfig       `json:"jwt"`
 	Database  DatabaseConfig  `json:"database"`
 	CORS      CORSConfig      `json:"cors"`
 	Upload    UploadConfig    `json:"upload"`
 	WORM      WORMConfig      `json:"worm"`
 	Log       LogConfig       `json:"log"`
 	Backup    BackupConfig    `json:"backup"`
+	License   LicenseConfig   `json:"license"`
 	Scheduler SchedulerConfig `json:"scheduler"`
 
 	// MaintenanceMode 进程内维护模式开关（第四阶段 P0）。
@@ -30,6 +35,27 @@ type Config struct {
 	// 不写入 JSON（json:"-"）：纯运行时状态，重启后回到 false。
 	// 进程重启意味着恢复中断，状态丢失是正确行为。
 	MaintenanceMode bool `json:"-"`
+}
+
+type LicenseConfig struct {
+	// AppID 本进程 app_id（2026-10-01 C1 统一新增）。
+	//
+	// 它同时是 HKDF 的 salt（ikm = machine_code，info = "lmp-license-v1"），
+	// 必须与 license payload 里的 app_id 精确一致，否则 AES 密钥派生失败。
+	// 全系统一沿用 doc_crm_v1。
+	//
+	// 2026-10-02 M-12 注释降级：以下 env 注入原意是"生产 license 段不落仓库"，
+	// 但实际不可行 —— license_key / machine_code 经 env 注入后会被
+	// `utils.Info("[binding] 使用配置中的机器码: %s", ...)` 等启动日志打印，
+	// 以及 `os.Environ()` 暴露给子进程，泄露面等同"落盘 + chmod 600"。
+	// 因此**禁止 env 注入**，license 段必须走"落盘 + 文件级权限"路径，
+	// 与 run.ps1 的"兜底 dev secret"模式保持一致：
+	//   - dev：bin/config.test-main.json 含 dev license（仅本机）
+	//   - prod：bin/config.json 含 prod license，文件 chmod 600，root 拥有
+	//   - 容器化：Secret 挂载为文件，不要走 env
+	AppID       string `json:"app_id"`
+	MachineCode string `json:"machine_code"`
+	LicenseKey  string `json:"license_key"`
 }
 
 type ServerConfig struct {
@@ -387,6 +413,114 @@ func getEnv(key, defaultValue string) string {
 
 func GetConfigFilePath() string {
 	return configFilePath
+}
+
+// SaveLicenseMachineCode 把机器码写回配置文件。
+//
+// 供 license_bootstrap 的「步骤1：机器码就绪」使用——首次部署时 config 里
+// 没有机器码，需要生成一个落盘，供运维拿到 LMP 签发。
+//
+// 为什么放在 config 包而不是 services：
+//
+//	services → config 已存在依赖；反向 config → services 会形成循环引用。
+//
+// ## 实现要点：**按条写入，不整体覆盖**
+//
+// 早期实现用 json.MarshalIndent(GlobalConfig) 整体回写，这会**静默丢失
+// 结构体里没有的键**——json.Unmarshal 忽略它们，但 json.Marshal 不会保留。
+// 实测 DocWMS 因此在首次部署后丢掉 database._comment / _mode_comment 等
+// 手写运维标记（其中 _mode_comment 记录的是 experience 模式的防绕过约束）。
+//
+// 现在改为：
+//  1. 用 map[string]json.RawMessage 读回原始文件的顶层各段（值保持原始字节）
+//  2. 只重写 license 段内部（同样用 map，保留 license 段里的未知子键）
+//  3. 其余各段原样写回
+//
+// 这样配置文件里任何手写标记、注释键、未来的扩展字段都不会被吞掉。
+//
+// 若 GlobalConfig 为 nil（LoadConfig 尚未调用）或文件不可读，返回错误而非 panic。
+func SaveLicenseMachineCode(machineCode string) error {
+	if GlobalConfig == nil {
+		return fmt.Errorf("config: GlobalConfig 为 nil，无法写回机器码")
+	}
+	GlobalConfig.License.MachineCode = machineCode
+
+	if err := patchConfigFile(func(root map[string]json.RawMessage) error {
+		// 只处理 license 段：解出该段，逐条替换 machine_code，其余键原样保留
+		var licenseFields map[string]json.RawMessage
+		if raw, ok := root["license"]; ok {
+			// 段存在：解出，缺字段则补空串
+			if err := json.Unmarshal(raw, &licenseFields); err != nil {
+				// license 段本身不是合法对象：退化为重建（此时无未知键可保留）
+				licenseFields = map[string]json.RawMessage{}
+			}
+		} else {
+			licenseFields = map[string]json.RawMessage{}
+		}
+
+		rawCode, err := json.Marshal(machineCode)
+		if err != nil {
+			return fmt.Errorf("序列化机器码失败: %v", err)
+		}
+		licenseFields["machine_code"] = rawCode
+
+		// 补齐 app_id / license_key，避免首次部署写出残缺段
+		for _, k := range []string{"app_id", "license_key"} {
+			if _, ok := licenseFields[k]; !ok {
+				licenseFields[k] = json.RawMessage(`""`)
+			}
+		}
+
+		rawLicense, err := json.MarshalIndent(licenseFields, "    ", "  ")
+		if err != nil {
+			return fmt.Errorf("序列化 license 段失败: %v", err)
+		}
+		root["license"] = rawLicense
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// patchConfigFile 按条修改配置文件：读入原始字节 → 对顶层各段套用 mutate →
+// 写回。除 mutate 显式改动的段外，其余段**原样保留原始字节**。
+//
+// 这样配置文件里的手写标记（如 database._comment）、注释键、格式差异都不会
+// 被结构体往返抹掉。
+func patchConfigFile(mutate func(root map[string]json.RawMessage) error) error {
+	original, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return fmt.Errorf("读取配置文件 %s 失败: %v", configFilePath, err)
+	}
+
+	// 容错：BOM / 前导空白会让 json.Unmarshal 失败
+	trimmed := bytes.TrimSpace(bytes.TrimPrefix(original, []byte{0xEF, 0xBB, 0xBF}))
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &root); err != nil {
+		return fmt.Errorf("解析配置文件 %s 失败: %v", configFilePath, err)
+	}
+	if root == nil {
+		root = map[string]json.RawMessage{}
+	}
+
+	if err := mutate(root); err != nil {
+		return err
+	}
+
+	// 顶层各段用 2 空格缩进，段内嵌套 2 空格（与现有配置文件风格一致）
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %v", err)
+	}
+	// 保留末尾换行
+	out = append(out, '\n')
+
+	if err := os.WriteFile(configFilePath, out, 0644); err != nil {
+		return fmt.Errorf("写入配置文件 %s 失败: %v", configFilePath, err)
+	}
+	return nil
 }
 
 func (c *Config) IsPathAllowed(filePath string) bool {

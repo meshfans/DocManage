@@ -59,6 +59,41 @@ func main() {
 	}
 	utils.Info("日志系统初始化成功，日志目录: %s, 保留天数: %d, 日志级别: %s", cfg.Log.Dir, cfg.Log.DaysToKeep, cfg.Log.Level)
 
+	// 启动期许可校验 + debug 信封判定（2026-10-01 C1/C5 统一，与 DocCRM 对齐）。
+	//
+	// **完全硬切**：任一校验失败（空 key / 格式错 / 验签失败 / app_id 或
+	// machine_code 不一致 / 已过期）一律 log.Fatal 拒绝启动。
+	// DocManageTrail 此前无任何许可校验入口，属未授权运行状态，本次一并补齐。
+	//
+	// 位置约束：InitLogger 之后（7 步日志落 cfg.Log.Dir）、InitDatabase 之前。
+	//
+	// 2026-10-02 H-3 修复：首次部署（LicenseKey 为空）时 licBoot.SetupMode=true，
+	// 进入 setup 启动分支——不连数据库、不开业务 API，仅暴露 /setup 端点
+	// 返回机器码 + 签发指引。
+	licBoot := bootstrapLicenseAndDebug(cfg)
+
+	if licBoot.SetupMode {
+		// ---------- SETUP 模式：监听端口 + 暴露机器码引导页 ----------
+		//
+		// 不连接数据库（避免无 license 时仍写 schema / seed 数据），
+		// 不初始化 JWT / WS / 调度器 / LLM 等业务子系统（它们都依赖数据库）。
+		// 仅最小化起一个 HTTP 服务供运维拿到机器码。
+		utils.Warn("[main] SETUP 模式启动：跳过数据库 / JWT / 业务子系统初始化")
+		setupServer := server.NewSetupServer(cfg, licBoot.MachineCode)
+		// Start 内部阻塞 ListenAndServe；放后台跑，主流程交回 RunGraceful 等信号
+		go func() {
+			if err := setupServer.Start(); err != nil {
+				utils.Fatal("SETUP 服务启动失败: %v", err)
+			}
+		}()
+		// Shutdownable 只要求 Shutdown()，不依赖 HTTP/WS/scheduler 全链路埋点
+		//（SETUP 模式无 WS、无 scheduler）。
+		services.RunGraceful(context.Background(), setupServer)
+		return
+	}
+
+	_ = licBoot // DBPassword 供需要加密 DB 的部署使用；本项目暂未启用
+
 	if err := database.InitDatabaseWithOptions(database.DatabaseInitOptions{
 		Path:              cfg.Database.Path,
 		JournalMode:       cfg.Database.JournalMode,
@@ -117,7 +152,7 @@ func main() {
 		utils.Fatal("JWT配置初始化失败: %v", err)
 	}
 
-	combinedServer := server.NewCombinedServer(cfg, jwtUtils, wsHandler)
+	combinedServer := server.NewCombinedServer(cfg, jwtUtils, wsHandler, licBoot.DebugModeActive)
 
 	// ⚠️ 2026-08-19 Round 18 修复：删除 SetGracefulShutdownFunc 注册。
 	// 此前该回调在 handler 失败时也会被触发（如 combinedServer.Start 失败），
