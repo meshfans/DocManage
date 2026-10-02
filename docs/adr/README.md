@@ -42,5 +42,6 @@
 | [ADR-0003](./0003-不用-orm-手写-sql.md) | 不用 ORM，手写 SQL | Accepted |
 | [ADR-0004](./0004-手写-prometheus-指标库.md) | 手写 Prometheus 指标库（不引入官方 SDK） | Accepted |
 | [ADR-0005](./0005-审计日志-append-only-哈希链.md) | 审计日志：append-only 哈希链（SM3） | Accepted |
+| [ADR-0006](./0006-license-feature-gate-后端挂载约束.md) | License Feature Gate 后端挂载约束 | Accepted |
 
 > 编号严格递增。Supersede 旧决策时保留旧文件，新文件引用 `Superseded by ADR-XXXX`。
